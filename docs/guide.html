@@ -195,7 +195,7 @@
           <tr><td><b>Line</b></td><td>Switch between lines. Each line has its own people and rosters.</td></tr>
           <tr><td><b>‹ Month Year ›</b></td><td>Step between months. Any month opens already built from the current rules.</td></tr>
           <tr><td><b>Generate month</b></td><td>Rebuild the grid from the rules. Shows a preview first: how many cells change, and coverage afterwards.</td></tr>
-          <tr><td><b>Auto-rotate</b></td><td>Propose next month's shift allocation, balanced for night-shift fairness. See <a href="#rotate">Auto-rotate</a>.</td></tr>
+          <tr><td><b>Auto-rotate</b></td><td>Propose next month's shift allocation, balanced for night-shift rotation. See <a href="#rotate">Auto-rotate</a>.</td></tr>
           <tr><td><b>Save</b></td><td>Everything saves automatically; this shows the status (✓ Saved / Saving…) and lets you save on demand.</td></tr>
           <tr><td><b>− 100% +</b></td><td>Screen zoom. Scales the grid from 70% to 140%. Click the percentage to reset.</td></tr>
           <tr><td><b>↶ ↷</b></td><td>Undo and redo. Also <kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.</td></tr>
@@ -252,8 +252,8 @@
 
     <section id="rotate">
       <h2>Auto-rotate</h2>
-      <p class="sub">Fair shift rotation, decided the same way every time</p>
-      <p>Rotating people between Morning, Evening and Night by hand is where unfairness creeps in. In your September sheet four engineers worked 22 night shifts each while six worked none. Auto-rotate fixes this in one step.</p>
+      <p class="sub">Balanced shift rotation, decided the same way every time</p>
+      <p>Rotating people between Morning, Evening and Night by hand is where shift imbalances creep in. In your September sheet four engineers worked 22 night shifts each while six worked none. Auto-rotate fixes this in one step.</p>
       <h3>What it does</h3>
       <ol class="steps">
         <li><div><b>Counts each person's night-shift load</b> across the months already in the tool.</div></li>
@@ -265,7 +265,6 @@
       <ul>
         <li>People marked <b>Fixed</b>, and anyone on a non-rotating code such as GS or P, are never moved.</li>
         <li>The result is deterministic: the same inputs always produce the same roster, so a roster you have signed off will not change under you.</li>
-        <li>The Fairness tab in Insights shows nights per person and how wide the gap is, so you can see the effect over time.</li>
       </ul>
     </section>
 
@@ -291,11 +290,11 @@
         <li><span class="status s-warn">Amber number</span> — that many warnings. Worth a look, but may be perfectly fine.</li>
         <li><span class="status s-yes">Clear</span> — nothing to fix.</li>
       </ul>
-      <p>Hover the button for a one-line explanation. Click it to open the panel, which has four tabs: Issues, Coverage, Hours and Fairness. The Hours tab is described under <a href="#hours">Hours &amp; overtime</a>.</p>
+      <p>Hover the button for a one-line explanation. Click it to open the panel, which has three tabs: Issues, Coverage and Hours. The Hours tab is described under <a href="#hours">Hours &amp; overtime</a>.</p>
       <div class="tabs">
         <div class="tab"><div class="eyebrow">Tab 1</div><h4>Issues</h4><p>Every problem in the month, one line each, most serious first. This is where you fix things.</p></div>
         <div class="tab"><div class="eyebrow">Tab 2</div><h4>Coverage</h4><p>A chart per shift showing people on it each day, plus the shift count for every person. This is where you see the shape of the month.</p></div>
-        <div class="tab"><div class="eyebrow">Tab 3</div><h4>Fairness</h4><p>Night shifts worked per person. This is where you see who has carried the load, and why Auto-rotate moves who it moves.</p></div>
+        <div class="tab"><div class="eyebrow">Tab 3</div><h4>Hours</h4><p>Worked hours and overtime per person. Shows month totals, shift hours and overtime balances.</p></div>
       </div>
       <h3>Tab 1 — Issues: finding and fixing a problem</h3>
       <p>Each line says the day, the shift and what is wrong — for example <em>"Day 25: Night has 2, needs 3."</em> Red items are under <b>Must fix</b>; amber items are under <b>Worth a look</b>.</p>
@@ -309,10 +308,8 @@
       <h3>Tab 2 — Coverage: the shape of the month, and counts per person</h3>
       <p>One small bar chart for each shift. Each bar is one day; the taller the bar, the more people on that shift that day. A <b>red bar</b> is a day below that shift's minimum — exactly the same days that appear as errors in the Issues tab. Above the charts, four tiles give the month's totals: shift-days worked, rest days, leave days, and days in the month.</p>
       <p>Below the charts, <b>Employee Breakdown</b> lists every person with their number of Morning, Evening, Night and other shifts, leave days and days off for the month. Type in the filter box to find someone; click a card to jump to their row on the grid.</p>
-      <h3>Tab 3 — Fairness: who has carried the nights</h3>
-      <p>Every person who rotates is listed with the number of night shifts they have worked, added up across all the months stored in the tool. The bar next to each name shows their share. The <b>spread</b> number at the top is the gap between the person with the most nights and the person with the fewest — the smaller it is, the fairer the roster.</p>
-      <p>This is the information Auto-rotate reads. When it proposes moving someone off nights, it is because they are near the top of this list. So if you ever wonder <em>why</em> a rotation moved a particular person, this tab is the answer.</p>
-      <div class="callout"><p>In your September roster the spread is 22: four engineers worked 22 night shifts each while six worked none. Running Auto-rotate into October narrows that gap.</p></div>
+      <h3>Tab 3 — Hours &amp; Overtime</h3>
+      <p>Summarises normal working hours, extra hours and accumulated overtime for every employee in the current month. See <a href="#hours">Hours &amp; overtime</a> below for detailed calculations and rules.</p>
       <h3>Where the rules come from</h3>
       <p>Every check in Insights depends on numbers you control. The <b>minimum people per day</b> for each shift (Setup › Shift codes) decides what counts as short-staffed. The <b>days in a row</b> limit (Setup › Planner rules) decides when a long run is flagged. Change a number there and every check re-runs instantly. Set a minimum to 0 to switch that check off for that shift.</p>
     </section>

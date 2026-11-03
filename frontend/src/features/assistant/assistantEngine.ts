@@ -69,7 +69,7 @@ export function generateAssistantReply(input: AssistantInput): AiReply {
         '',
         `Average nights worked across the team: ${(
           nightCounts.reduce((acc, x) => acc + x.count, 0) / (employees.length || 1)
-        ).toFixed(1)} shifts. Rotation fairness is balanced within the configured tolerances.`,
+        ).toFixed(1)} shifts. Shift rotation is balanced within the configured tolerances.`,
       ];
 
       return {
@@ -297,7 +297,7 @@ export function generateAssistantReply(input: AssistantInput): AiReply {
       `**Month Summary for ${monthName(input.month)} ${input.year}:**`,
       `1. **Workforce & Compliance**: ${totalStaff} staff members active; ${errors === 0 ? '100% compliant with rest and minimum headcount rules.' : `${errors} schedule rule issues to review in Insights.`}`,
       `2. **Maintenance Orders**: ${woCount} work orders loaded across Signalling & Telecommunication assets; staffing buffers are actively verified against the live roster.`,
-      `3. **Rotation & Fairness**: Multi-shift coverage (Morning, Evening, Night) is operating with automated shift fairness and safe transition bridges.`,
+      `3. **Shift Rotation**: Multi-shift coverage (Morning, Evening, Night) is operating with safe transition bridges and balanced shift assignments.`,
     ];
     return { answer: lines.join('\n'), actions: [], preview: null };
   }
@@ -364,7 +364,7 @@ export function generateAssistantReply(input: AssistantInput): AiReply {
       `• **Roster Verification**: Ask *"Which days are short-staffed?"* to detect rule or headcount shortfalls.`,
       `• **Smart Coverage**: Ask *"Who can cover Night on the short days?"* to preview and apply instant shift fixes.`,
       `• **Maintenance Workorders**: Ask *"Which work orders are short this month?"* to inspect live demand vs on-duty crew.`,
-      `• **Fairness Audit**: Ask *"Who has worked the most nights?"* to check rotation balances.`,
+      `• **Night Shift Audit**: Ask *"Who has worked the most nights?"* to check rotation balances.`,
     ].join('\n'),
     actions: [],
     preview: null,

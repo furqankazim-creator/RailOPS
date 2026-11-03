@@ -33,7 +33,7 @@ export interface ImportResult {
   layout: SheetLayout;
 }
 
-const KNOWN_WORKED = ['M', 'E', 'N', 'GS', 'P', 'MT', 'ET', 'NT', 'ML', 'EL', 'NL'];
+const KNOWN_WORKED = ['M', 'E', 'N', 'GS', 'P', 'MT', 'ET', 'NT', 'ML', 'EL', 'NL', 'M(S/L)', 'E(S/L)', 'N(S/L)'];
 
 export { parseSheetMeta };
 const parseTitle = parseSheetMeta;
@@ -48,11 +48,12 @@ export function normalizeShiftCode(raw: string, isRed?: boolean): string {
   if (!text || text === '-' || /^off$/i.test(text) || /^tbd$/i.test(text)) return OFF;
 
   if (/^flrt/i.test(text)) return 'FLRT';
-  if (/leave|annual|vacation|sick|\blv\b/i.test(text)) return 'LV';
+  // Both "L" and "LV" represent Leave
+  if (/^(l|lv|leave|annual|vacation|sick)$/i.test(text) || /leave|annual|vacation|sick|\blv\b/i.test(text)) return 'LV';
 
   const upper = text.toUpperCase();
-  // "E (S/L)", "E(SL)" and "E(S/L)" are one code written three ways.
-  const split = upper.replace(/\s+/g, '').match(/^([MEN])\(S\/?L\)$/);
+  // "E (S/L)", "E(SL)", "ES/L", "ESL", and "E(S/L)" are one code written different ways.
+  const split = upper.replace(/\s+/g, '').match(/^([MEN])\(?S\/?L\)?$/);
   if (split) return `${split[1]}(S/L)`;
   if (KNOWN_WORKED.includes(upper)) return upper;
 
@@ -60,16 +61,19 @@ export function normalizeShiftCode(raw: string, isRed?: boolean): string {
   if (/^morning/i.test(text)) {
     if (/morning\s*t/i.test(text)) return 'MT';
     if (/morning\s*l/i.test(text)) return 'ML';
+    if (/morning\s*s/i.test(text)) return 'M(S/L)';
     return 'M';
   }
   if (/^evening/i.test(text)) {
     if (/evening\s*t/i.test(text)) return 'ET';
     if (/evening\s*l/i.test(text)) return 'EL';
+    if (/evening\s*s/i.test(text)) return 'E(S/L)';
     return 'E';
   }
   if (/^night/i.test(text)) {
     if (/night\s*t/i.test(text)) return 'NT';
     if (/night\s*l/i.test(text)) return 'NL';
+    if (/night\s*s/i.test(text)) return 'N(S/L)';
     return 'N';
   }
   if (/^general/i.test(text) || /^gs\b/i.test(text)) return 'GS';

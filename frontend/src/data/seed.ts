@@ -83,6 +83,22 @@ export const SEED_CODES: ShiftCode[] = [
     id: 'FLRT', label: 'FLRT', timing: '—', tone: 'leave',
     minHeadcount: 0, countsAsEngineer: false, rotates: false, isStatus: true, order: 10,
   },
+  {
+    id: 'M(S/L)', label: 'Morning Shift Leader', timing: '06:00 – 15:00', tone: 'morning',
+    minHeadcount: 0, countsAsEngineer: true, rotates: false, order: 14,
+  },
+  {
+    id: 'E(S/L)', label: 'Evening Shift Leader', timing: '14:00 – 23:00', tone: 'evening',
+    minHeadcount: 0, countsAsEngineer: true, rotates: false, order: 15,
+  },
+  {
+    id: 'N(S/L)', label: 'Night Shift Leader', timing: '22:00 – 07:00', tone: 'night',
+    minHeadcount: 0, countsAsEngineer: true, rotates: false, order: 16,
+  },
+  {
+    id: 'L', label: 'Leave', timing: '—', tone: 'leave',
+    minHeadcount: 0, countsAsEngineer: false, rotates: false, isStatus: true, order: 17,
+  },
 ];
 
 export const SEED_EMPLOYEES: Employee[] = [

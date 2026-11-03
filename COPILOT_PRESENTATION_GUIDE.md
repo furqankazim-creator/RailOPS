@@ -90,7 +90,7 @@ Follow this structured script during your meeting:
    - The browser opens instantly with the September Line 5 roster ready.
 3. **Minute 3: Demonstrating the Planner & Live Engine**
    - Show how painting a shift or adding leave immediately recalculates daily minimum headcounts.
-   - Demonstrate **Auto-rotate** and the **Fairness tab** (showing night shift spread across the team).
+   - Demonstrate **Auto-rotate** (showing shift rotation across the team).
 4. **Minute 4: Work Orders ↔ Planner Synchronization**
    - Navigate to the **Work Orders** page.
    - Show how demand from the 11-column Excel file matches against available Planner staff.

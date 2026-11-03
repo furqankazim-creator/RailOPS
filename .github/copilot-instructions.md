@@ -23,7 +23,7 @@ When the user asks how to run, launch, or present RailOPS, always provide these 
    ```bash
    npm test
    ```
-   - Runs 150+ Vitest unit and regression tests, verifying the scheduling generator, fairness calculations, and cell-by-cell Excel fidelity.
+   - Runs 150+ Vitest unit and regression tests, verifying the scheduling generator, rotation calculations, and cell-by-cell Excel fidelity.
 
 3. **Production Build**:
    ```bash

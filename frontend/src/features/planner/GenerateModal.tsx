@@ -32,6 +32,8 @@ export function GenerateModal({ open, onClose, onDone }: { open: boolean; onClos
     const next = generateMonth({
       year, month, lineId, employees, leaveBlocks: leave,
       overrides: respectOverrides ? roster?.overrides ?? {} : {},
+      extraHours: respectOverrides ? roster?.extraHours ?? {} : {},
+      otOverrides: respectOverrides ? roster?.otOverrides ?? {} : {},
       respectOverrides,
       respectLeave,
     });

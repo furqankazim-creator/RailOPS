@@ -51,20 +51,21 @@ describe('work-order import reads only the yellow columns, by header name', () =
     });
   });
 
-  it('ignores every other column', () => {
-    expect(a.extra).toBeUndefined();
-    expect(a.status).toBe('');
-    expect(JSON.stringify(a)).not.toContain('whatever');
+  it('imports every other column from the file into extra and fills status', () => {
+    expect(a.extra).toBeDefined();
+    expect(a.extra?.['Actual Start']).toBe('whatever');
+    expect(a.extra?.['SR Affected']).toBe('Y');
+    expect(a.extra?.['Asset']).toBe('X-1');
+    expect(a.status).toBe('APPR');
   });
 
-  it('reports blank and bad cells with the Excel row number — no silent defaults', () => {
+  it('reports bad cells with the Excel row number — no silent defaults', () => {
     expect(b.importWarnings).toEqual(
-      expect.arrayContaining(['Row 5: Line "Depot" is not L4, L5 or L6', 'Row 5: Scheduled Start missing']),
+      expect.arrayContaining(['Row 5: Line "Depot" is not L4, L5 or L6']),
     );
     expect(b.line).toBe('');
-    expect(b.scheduledStart).toBe('');
     expect(c.importWarnings).toEqual(
-      expect.arrayContaining(['Row 6: Scheduled Start "next week" is not a date', 'Row 6: Asset Group missing']),
+      expect.arrayContaining(['Row 6: Scheduled Start "next week" is not a date']),
     );
   });
 
@@ -92,10 +93,13 @@ describe('work-order import reads only the yellow columns, by header name', () =
 });
 
 describe('missing columns and the allowed window', () => {
-  it('a configured column missing from the file is a whole-file error', () => {
-    const header = HEADER.filter((h) => h !== 'Target Start');
-    const res = parseWorkOrdersWorkbook(workbook([header, header.map((h) => (good as Record<string, unknown>)[h] ?? '')]));
-    expect(res.fileErrors).toEqual(['Column "Target Start" not found in the file']);
+  it('a configured required column missing from the file is a whole-file error', () => {
+    const cols: WorkOrderColumn[] = [
+      ...WORK_ORDER_COLUMNS,
+      { excelHeader: 'Target Slip', appField: 'targetSlip', required: true, type: 'text', usedFor: 'test' },
+    ];
+    const res = parseWorkOrdersWorkbook(workbook([HEADER, row(good)]), cols);
+    expect(res.fileErrors).toEqual(['Column "Target Slip" not found in the file']);
     expect(res.workOrders[0].importWarnings ?? []).toEqual([]); // not repeated on every row
   });
 
@@ -122,7 +126,7 @@ describe('adding a column through the config only', () => {
       workbook([header, [...row(good), 'P1'], [...row({ ...good, 'Work Order': 9 }), '']]),
       columns,
     );
-    expect(res.workOrders[0].extra).toEqual({ priority: 'P1' });
+    expect(res.workOrders[0].extra?.priority).toBe('P1');
     expect(res.workOrders[1].importWarnings).toContain('Row 3: Priority missing');
   });
 });
@@ -136,7 +140,7 @@ describe('columns added in Setup → Excel import columns', () => {
       workbook([header, [...row(good), 'P1'], [...row({ ...good, 'Work Order': 9 }), '']]),
       allWorkOrderColumns([added]),
     );
-    expect(res.workOrders[0].extra).toEqual({ jobPriority: 'P1' });
+    expect(res.workOrders[0].extra?.jobPriority).toBe('P1');
     expect(res.workOrders[1].importWarnings).toContain('Row 3: Job Priority missing');
   });
 
@@ -158,7 +162,7 @@ describe('columns removed in Setup are not imported; added columns are read by h
     expect(res.fileErrors).toEqual([]);
   });
   it('reads the added column (case-insensitive header) into extra', () => {
-    expect(wo.extra).toEqual({ hello: 'hi there' });
+    expect(wo.extra?.hello).toBe('hi there');
   });
   it('reports the added mandatory column when the file lacks it', () => {
     const r2 = parseWorkOrdersWorkbook(workbook([HEADER, row(good)]), cols);

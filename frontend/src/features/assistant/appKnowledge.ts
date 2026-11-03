@@ -100,7 +100,7 @@ export const QUICK_HELP: { q: string; a: string }[] = [
   },
   {
     q: 'Which Excel columns are read?',
-    a: 'Only the 11 yellow columns, matched by header name: Work Order, Description, Location, Reported Date, Start No Earlier Than, Target Start, Scheduled Start, Finish No Later Than, Div / Depart, Line, Asset Group. Everything else is ignored. Missing columns or blank cells are listed in the Import report ("Row 45: Scheduled Start missing"). New columns are added in src/domain/workOrderColumns.ts.',
+    a: 'All columns from your Excel file are read and imported automatically. Standard columns (Work Order, Description, Location, Scheduled Start, Line, etc.) link directly to Duty Roster scheduling, while all other columns in your file are preserved and included in reports.',
   },
   {
     q: 'What do the statuses mean?',

@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 
 import type { ResourceRequirement, WorkOrder } from './types';
-import { WORK_ORDER_COLUMNS, WORK_TYPE_RULES, headerKey, type WorkOrderColumn } from './workOrderColumns';
+import { WORK_ORDER_COLUMNS, WORK_TYPE_RULES, fieldFromHeader, headerKey, type WorkOrderColumn } from './workOrderColumns';
 
 /** Normalizes line name/token into standard 'L4' | 'L5' | 'L6' */
 export function normalizeLineCode(raw: string | undefined): 'L4' | 'L5' | 'L6' {
@@ -85,10 +85,11 @@ export function normalizeWorkType(raw: string | undefined): 'PM' | 'CM' | 'ACS' 
 export function tryParseDate(raw: any): string | null {
   if (!raw) return null;
 
-  // An Excel date serial (e.g. 46290 = 25-Sep-2026). Converted by the serial itself so the
-  // day is exactly the one Excel shows, whatever the computer's time zone.
-  if (typeof raw === 'number' && raw > 20000 && raw < 80000) {
-    const p = XLSX.SSF.parse_date_code(raw);
+  // An Excel date serial (e.g. 46290 = 25-Sep-2026, or "46342.11666666667").
+  // Converted by the serial itself so the day is exactly the one Excel shows.
+  const num = typeof raw === 'number' ? raw : (typeof raw === 'string' && /^\d{5}(\.\d+)?$/.test(raw.trim()) ? Number(raw.trim()) : NaN);
+  if (!isNaN(num) && num > 20000 && num < 80000) {
+    const p = XLSX.SSF.parse_date_code(num);
     if (p && p.y) return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
   }
 
@@ -187,6 +188,8 @@ export interface WorkOrderImportResult {
   headerRow: number;
   /** The sheet that was read. */
   sheetName: string;
+  /** All columns detected in the uploaded file (standard + extra). */
+  detectedColumns?: WorkOrderColumn[];
 }
 
 /** Fields a configured column may fill directly on a WorkOrder; anything else goes to `extra`. */
@@ -263,14 +266,40 @@ function parseWorkOrdersSheet(
     );
   }
 
-  const header = grid[headerIdx].map(headerKey);
+  const rawHeaders = (grid[headerIdx] as unknown[]).map((v) => String(v ?? '').trim());
+  const header = rawHeaders.map(headerKey);
   const colIndex = new Map<WorkOrderColumn, number>();
+  const matchedIndices = new Set<number>();
   const fileErrors: string[] = [];
+
   for (const c of columns) {
     const idx = header.findIndex((h) => h && keysFor(c).includes(h));
-    if (idx >= 0) colIndex.set(c, idx);
-    else if (c.required) fileErrors.push(`Column "${c.excelHeader}" not found in the file`);
+    if (idx >= 0) {
+      colIndex.set(c, idx);
+      matchedIndices.add(idx);
+    } else if (c.required) {
+      fileErrors.push(`Column "${c.excelHeader}" not found in the file`);
+    }
   }
+
+  // Detect and capture ALL other columns present in the file
+  const extraFileCols: { idx: number; headerName: string; appField: string }[] = [];
+  rawHeaders.forEach((rawH, idx) => {
+    if (!rawH || matchedIndices.has(idx)) return;
+    const appField = fieldFromHeader(rawH);
+    extraFileCols.push({ idx, headerName: rawH, appField });
+  });
+
+  const detectedColumns: WorkOrderColumn[] = [
+    ...Array.from(colIndex.keys()),
+    ...extraFileCols.map((ef) => ({
+      excelHeader: ef.headerName,
+      appField: ef.appField,
+      required: false,
+      type: 'text' as const,
+      usedFor: ef.headerName,
+    })),
+  ];
 
   const workOrders: WorkOrder[] = [];
   const warnings: string[] = [];
@@ -282,7 +311,7 @@ function parseWorkOrdersSheet(
       const idx = colIndex.get(c);
       return idx === undefined ? '' : row[idx];
     };
-    if ([...colIndex.values()].every((idx) => String(row[idx] ?? '').trim() === '')) return; // blank row
+    if (row.every((v) => String(v ?? '').trim() === '')) return; // blank row
 
     const problems: string[] = [];
     const values: Record<string, string> = {};
@@ -313,6 +342,25 @@ function parseWorkOrdersSheet(
 
     const extra: Record<string, string> = {};
     for (const [k, v] of Object.entries(values)) if (!KNOWN_FIELDS.has(k)) extra[k] = v;
+
+    // Read all other columns present in the Excel file into extra
+    for (const ef of extraFileCols) {
+      const v = row[ef.idx];
+      let text = v instanceof Date ? (tryParseDate(v) ?? '') : String(v ?? '').trim();
+      const numVal = typeof v === 'number' ? v : (typeof text === 'string' && /^\d{5}(\.\d+)?$/.test(text) ? Number(text) : NaN);
+      if (!isNaN(numVal) && numVal > 20000 && numVal < 80000) {
+        const parsed = tryParseDate(numVal);
+        if (parsed) text = parsed;
+      }
+      if (text !== '') {
+        extra[ef.headerName] = text;
+        extra[ef.appField] = text;
+        // If the file has a "Status" column and wo has no status:
+        if (headerKey(ef.headerName) === 'status' && !values.status) {
+          values.status = text;
+        }
+      }
+    }
 
     const workOrderId = values.workOrderId || `ROW-${excelRow}`;
     const description = values.description || '';
@@ -357,7 +405,7 @@ function parseWorkOrdersSheet(
   }
   for (const wo of workOrders) warnings.push(...(wo.importWarnings ?? []));
 
-  return { workOrders, totalRows: workOrders.length, warnings, fileErrors, headerRow: headerIdx + 1, sheetName };
+  return { workOrders, totalRows: workOrders.length, warnings, fileErrors, headerRow: headerIdx + 1, sheetName, detectedColumns };
 }
 
 /**

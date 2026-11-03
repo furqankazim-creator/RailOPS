@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/app/store';
 import { useViewport } from '@/app/useViewport';
 import { codeVars } from '@/app/tones';
-import { cx } from '@/components/ui';
+import { cx, useToast } from '@/components/ui';
 import { todayIndex } from '@/domain/calendar';
 import { formatHours } from '@/domain/hours';
 import { isLeaderEmployee } from '@/domain/rotation';
-import { OFF, type Issue, type ShiftCode } from '@/domain/types';
+import { OFF, type Employee, type Issue, type ShiftCode } from '@/domain/types';
 
 import { CellPicker } from './CellPicker';
+import { OtPicker } from './OtPicker';
 
 /** Grid metrics per layout tier. Touch targets grow on small screens. */
 const METRICS = {
@@ -44,8 +45,9 @@ interface Props {
 export function RosterGrid({ brush, revealKey, jumpTo, onOpenImport }: Props) {
   const {
     roster, employees, codes, lineCodes, columns, days, issues, settings, hours, paintCell, paintRange,
-    setExtraHours,
+    setExtraHours, setEmployeeOt,
   } = useStore();
+  const toast = useToast();
   const viewport = useViewport();
   const zoom = (settings.zoomLevel ?? 100) / 100;
   const base = METRICS[viewport];
@@ -58,6 +60,7 @@ export function RosterGrid({ brush, revealKey, jumpTo, onOpenImport }: Props) {
 
   const [focus, setFocus] = useState<Focus | null>(null);
   const [picker, setPicker] = useState<{ focus: Focus; x: number; y: number } | null>(null);
+  const [otPicker, setOtPicker] = useState<{ employee: Employee; x: number; y: number } | null>(null);
   const drag = useRef<{ employeeId: string; from: number; to: number } | null>(null);
   const [dragPreview, setDragPreview] = useState<{ employeeId: string; from: number; to: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -493,11 +496,17 @@ export function RosterGrid({ brush, revealKey, jumpTo, onOpenImport }: Props) {
                   highlight={!!empHours && empHours.overtime > 0}
                   title={
                     empHours && empHours.overtime > 0
-                      ? `${formatHours(empHours.overtime)}h overtime` +
-                        (empHours.extraDutyDays ? ` · ${empHours.extraDutyDays} extra-duty day(s)` : '') +
-                        (empHours.extra ? ` · ${formatHours(empHours.extra)}h extra entered` : '')
-                      : 'No overtime this month'
+                      ? `${formatHours(empHours.overtime)}h overtime · Click to type / check OT`
+                      : 'Click to type / set OT'
                   }
+                  onClick={(e) => {
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setOtPicker({
+                      employee,
+                      x: rect.left - 240,
+                      y: rect.top,
+                    });
+                  }}
                 >
                   {empHours ? formatHours(empHours.overtime) : '·'}
                 </TotalCell>
@@ -545,6 +554,21 @@ export function RosterGrid({ brush, revealKey, jumpTo, onOpenImport }: Props) {
           onClose={() => setPicker(null)}
         />
       )}
+
+      {otPicker && (
+        <OtPicker
+          x={otPicker.x}
+          y={otPicker.y}
+          employee={otPicker.employee}
+          currentOt={hours[otPicker.employee.id]?.overtime ?? 0}
+          onSave={(newOt) => {
+            setEmployeeOt(otPicker.employee.id, newOt);
+            toast(`Overtime for ${otPicker.employee.name} set to ${newOt}h`, 'ok');
+            setOtPicker(null);
+          }}
+          onClose={() => setOtPicker(null)}
+        />
+      )}
     </div>
   );
 }
@@ -589,7 +613,7 @@ function TotalHeader({ label, right, width, title }: { label: string; right: num
 }
 
 function TotalCell({
-  right, width, height, zoom, highlight, title, children,
+  right, width, height, zoom, highlight, title, onClick, children,
 }: {
   right: number;
   width: number;
@@ -597,11 +621,16 @@ function TotalCell({
   zoom: number;
   highlight?: boolean;
   title?: string;
+  onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   children: React.ReactNode;
 }) {
   return (
     <div
-      className="sticky z-10 flex items-center justify-center font-mono bg-[var(--canvas)] group-hover:bg-[var(--surface)] border-l border-[var(--line-strong)] transition-colors"
+      onClick={onClick}
+      className={cx(
+        'sticky z-10 flex items-center justify-center font-mono bg-[var(--canvas)] group-hover:bg-[var(--surface)] border-l border-[var(--line-strong)] transition-colors',
+        onClick && 'cursor-pointer hover:bg-[var(--surface-3)] active:scale-95',
+      )}
       style={{
         right,
         width,

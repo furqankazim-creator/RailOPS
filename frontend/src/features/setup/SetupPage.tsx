@@ -488,7 +488,7 @@ const SECTION_TIPS: Record<string, string> = {
   'Display & Fonts': 'Display & Fonts\nZoom, text size and typeface for this device only — nobody else\'s screen changes.',
   'Data & Backups': 'Data & Backups\nYour data is stored in this browser. Download a backup before switching computers or clearing the browser, and restore it here.',
   'Security & Access Passcodes': 'Security & Access Passcodes\nThe supervisor password, plus the personal passwords and direct links you give to each person.',
-  'Excel import columns': 'Excel import columns\nWhich columns the work-order import reads, matched by their header name. Add a column you need or remove one you do not.',
+  'Excel import columns': 'Excel import columns\nColumns mapped from your work-order files for Duty Roster scheduling and reports.',
   'Work Order Resource Standards': 'Work Order Resource Standards\nHow many people a preventive, corrective or inspection job needs, per line and shift. Used when the Excel row gives no crew size.',
 };
 
@@ -1320,20 +1320,20 @@ function ExcelColumnsSection() {
   return (
     <Section
       title="Excel import columns"
-      description="The work-order import reads only these columns, matched by header name; every other column is ignored. Add a column here and the next import reads and checks it."
+      description="All columns in your Excel file are imported automatically. Standard columns map to Duty Roster scheduling, and extra columns are saved and included in reports and CSV exports."
     >
       <div className="bg-[var(--surface)] p-4 sm:p-5 flex flex-col gap-5">
-        {/* Built-in yellow columns */}
+        {/* Standard columns */}
         <div>
           <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-ink-3">
-            Yellow columns (read on import) · {activeBuiltIn.length + custom.length}
+            Standard columns · {activeBuiltIn.length + custom.length}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {activeBuiltIn.map((c) => (
               <span
                 key={c.excelHeader}
                 title={c.usedFor}
-                className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-lg text-[12px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/30"
+                className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-lg text-[12px] font-semibold bg-[var(--surface-2)] text-ink border border-[var(--line)]"
               >
                 {c.excelHeader}
                 <button
@@ -1341,7 +1341,7 @@ function ExcelColumnsSection() {
                   onClick={() => removeBuiltIn(c)}
                   aria-label={`Remove ${c.excelHeader}`}
                   title="Remove — stop importing this column"
-                  className="w-4 h-4 leading-none rounded hover:bg-amber-500/30"
+                  className="w-4 h-4 leading-none rounded hover:bg-[var(--surface-3)] text-ink-3 hover:text-ink"
                 >
                   ×
                 </button>
@@ -1351,7 +1351,7 @@ function ExcelColumnsSection() {
               <span
                 key={`custom-${c.excelHeader}`}
                 title={c.usedFor}
-                className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-lg text-[12px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/30"
+                className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-lg text-[12px] font-semibold bg-[var(--surface-2)] text-ink border border-[var(--line)]"
               >
                 {c.excelHeader}
                 <button
@@ -1359,7 +1359,7 @@ function ExcelColumnsSection() {
                   onClick={() => remove(i)}
                   aria-label={`Remove ${c.excelHeader}`}
                   title="Remove this added column"
-                  className="w-4 h-4 leading-none rounded hover:bg-amber-500/30"
+                  className="w-4 h-4 leading-none rounded hover:bg-[var(--surface-3)] text-ink-3 hover:text-ink"
                 >
                   ×
                 </button>

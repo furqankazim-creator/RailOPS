@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { SEED_CODES } from '@/data/seed';
-import { generateMonth, setCell, setExtraHours } from '@/domain/generator';
+import { clearAllExtraHours, generateMonth, setCell, setEmployeeOt, setExtraHours } from '@/domain/generator';
 import { employeeHours, shiftHours } from '@/domain/hours';
 import type { Employee, LeaveBlock, ShiftCode } from '@/domain/types';
 
@@ -50,11 +50,11 @@ describe('employeeHours', () => {
     expect(h.days[0]).toMatchObject({ worked: 11, regular: 9, overtime: 2, extraDuty: false });
   });
 
-  it('a shift assigned on a rest day is an extra duty, all overtime', () => {
+  it('a shift assigned on a rest day defaults to 0 overtime unless extra hours added', () => {
     const h = hoursOf(setCell(month(), EMP.id, 3, 'M')); // Friday the 4th
     expect(h.extraDutyDays).toBe(1);
-    expect(h.overtime).toBe(9);
-    expect(h.days[3]).toMatchObject({ worked: 9, regular: 0, overtime: 9, extraDuty: true });
+    expect(h.overtime).toBe(0);
+    expect(h.days[3]).toMatchObject({ worked: 9, regular: 9, overtime: 0, extraDuty: true });
   });
 
   it('ignores extra hours on a day off', () => {
@@ -64,9 +64,9 @@ describe('employeeHours', () => {
     expect(h.extra).toBe(0);
   });
 
-  it('extra hours on an extra-duty shift are overtime too', () => {
+  it('extra hours on a rest-day shift count as overtime', () => {
     const h = hoursOf(setExtraHours(setCell(month(), EMP.id, 3, 'M'), EMP.id, 3, 2));
-    expect(h.days[3]).toMatchObject({ worked: 11, regular: 0, overtime: 11, extraDuty: true });
+    expect(h.days[3]).toMatchObject({ worked: 11, regular: 9, overtime: 2, extraDuty: true });
   });
 
   it('a shift longer than the standard day earns the difference', () => {
@@ -96,5 +96,32 @@ describe('extra hours in the roster', () => {
   it('setting 0 removes the entry', () => {
     const cleared = setExtraHours(setExtraHours(month(), EMP.id, 5, 2), EMP.id, 5, 0);
     expect(cleared.extraHours?.[EMP.id]).toEqual({});
+  });
+
+  it('clearAllExtraHours removes all extra hours for the employee', () => {
+    let r = setExtraHours(month(), EMP.id, 5, 2);
+    r = setExtraHours(r, EMP.id, 6, 3);
+    const cleared = clearAllExtraHours(r, EMP.id);
+    expect(cleared.extraHours?.[EMP.id]).toBeUndefined();
+  });
+
+  it('setEmployeeOt overrides monthly overtime', () => {
+    let r = setCell(month(), EMP.id, 3, 'M');
+    r = setEmployeeOt(r, EMP.id, 0);
+    expect(hoursOf(r).overtime).toBe(0);
+
+    r = setEmployeeOt(r, EMP.id, 5);
+    expect(hoursOf(r).overtime).toBe(5);
+
+    // Verify generateMonth preserves otOverrides
+    const regenerated = generateMonth({
+      year: 2026,
+      month: 9,
+      lineId: 'line5',
+      employees: [EMP],
+      otOverrides: r.otOverrides,
+    });
+    expect(regenerated.otOverrides?.[EMP.id]).toBe(5);
+    expect(hoursOf(regenerated).overtime).toBe(5);
   });
 });

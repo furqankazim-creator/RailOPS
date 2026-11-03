@@ -26,7 +26,7 @@ export function summarise(roster: RosterMonth, codes: ShiftCode[], nDays: number
         off++;
         continue;
       }
-      if (statusCodes.has(code)) {
+      if (statusCodes.has(code) || code === 'LV' || code === 'L' || code === 'FLRT') {
         onLeave++;
         continue;
       }

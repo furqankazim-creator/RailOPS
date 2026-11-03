@@ -252,8 +252,15 @@ export function ImportModal({
       N:    { label: 'Night',             timing: '22:00 – 07:00', tone: 'night',    rotates: true  },
       NL:   { label: 'Night Late',        timing: '19:00 – 07:00', tone: 'night',    rotates: false },
       NT:   { label: 'Night – Support',   timing: '22:00 – 07:00', tone: 'night',    rotates: false },
+      'M(S/L)': { label: 'Morning Shift Leader', timing: '06:00 – 15:00', tone: 'morning', rotates: false },
+      'MS/L':   { label: 'Morning Shift Leader', timing: '06:00 – 15:00', tone: 'morning', rotates: false },
+      'E(S/L)': { label: 'Evening Shift Leader', timing: '14:00 – 23:00', tone: 'evening', rotates: false },
+      'ES/L':   { label: 'Evening Shift Leader', timing: '14:00 – 23:00', tone: 'evening', rotates: false },
+      'N(S/L)': { label: 'Night Shift Leader',   timing: '22:00 – 07:00', tone: 'night',   rotates: false },
+      'NS/L':   { label: 'Night Shift Leader',   timing: '22:00 – 07:00', tone: 'night',   rotates: false },
       GS:   { label: 'General Shift',     timing: '08:00 – 17:00', tone: 'general',  rotates: false },
       P:    { label: 'Project',           timing: '08:00 – 17:00', tone: 'project',  rotates: false },
+      L:    { label: 'Leave',             timing: '',              tone: 'leave',    rotates: false, isStatus: true },
       LV:   { label: 'Leave',             timing: '',              tone: 'leave',    rotates: false, isStatus: true },
       FLRT: { label: 'FLRT',             timing: '',              tone: 'leave',    rotates: false, isStatus: true },
     };
@@ -285,12 +292,13 @@ export function ImportModal({
     }
 
     // Infer tone from first letter
-    const tone: Tone = /^M/i.test(up) ? 'morning'
+    const isLeave = /^(LV|L|AL|SL|LEAVE)/i.test(up);
+    const tone: Tone = isLeave ? 'leave'
+      : /^M/i.test(up) ? 'morning'
       : /^E/i.test(up) ? 'evening'
       : /^N/i.test(up) ? 'night'
       : /^GS/i.test(up) ? 'general'
       : /^P/i.test(up) ? 'project'
-      : /^LV|^AL|^SL/i.test(up) ? 'leave'
       : 'off';
 
     return {
@@ -299,8 +307,9 @@ export function ImportModal({
       timing: '',
       tone,
       minHeadcount: 0,
-      countsAsEngineer: false,
+      countsAsEngineer: !isLeave,
       rotates: false,
+      ...(isLeave ? { isStatus: true } : {}),
       order: 500 + existingCount,
     };
   };

@@ -11,6 +11,8 @@ export interface GenerateInput {
   overrides?: Record<string, Record<number, string>>;
   /** Extra hours to carry over unchanged: empId -> dayIndex -> hours. */
   extraHours?: Record<string, Record<number, number>>;
+  /** Monthly OT overrides to preserve: empId -> hours. */
+  otOverrides?: Record<string, number>;
   /** When false, a regenerate wipes hand edits and rebuilds purely from rules. */
   respectOverrides?: boolean;
   /** When false, leave blocks are ignored (used by "what-if" previews). */
@@ -40,6 +42,7 @@ export function generateMonth(input: GenerateInput): RosterMonth {
     leaveBlocks = [],
     overrides = {},
     extraHours = {},
+    otOverrides = {},
     respectOverrides = true,
     respectLeave = true,
   } = input;
@@ -104,6 +107,7 @@ export function generateMonth(input: GenerateInput): RosterMonth {
     cells,
     overrides: respectOverrides ? overrides : {},
     extraHours: respectOverrides ? extraHours : {},
+    otOverrides: respectOverrides ? otOverrides : {},
     updatedAt: Date.now(),
   };
 }
@@ -150,6 +154,46 @@ export function setExtraHours(
   return {
     ...roster,
     extraHours: { ...(roster.extraHours ?? {}), [employeeId]: row },
+    updatedAt: Date.now(),
+  };
+}
+
+/** Clears all extra hours for an employee in this month. */
+export function clearAllExtraHours(
+  roster: RosterMonth,
+  employeeId: string,
+): RosterMonth {
+  if (!roster.extraHours?.[employeeId]) return roster;
+  const next = { ...roster.extraHours };
+  delete next[employeeId];
+  return {
+    ...roster,
+    extraHours: next,
+    updatedAt: Date.now(),
+  };
+}
+
+/** Sets or clears an explicit monthly overtime override for an employee. */
+export function setEmployeeOt(
+  roster: RosterMonth,
+  employeeId: string,
+  overtimeHours?: number,
+): RosterMonth {
+  const next = { ...(roster.otOverrides ?? {}) };
+  if (overtimeHours !== undefined && overtimeHours >= 0) {
+    next[employeeId] = overtimeHours;
+  } else {
+    delete next[employeeId];
+  }
+  let nextExtra = roster.extraHours;
+  if (overtimeHours === 0 && roster.extraHours?.[employeeId]) {
+    nextExtra = { ...roster.extraHours };
+    delete nextExtra[employeeId];
+  }
+  return {
+    ...roster,
+    otOverrides: next,
+    extraHours: nextExtra,
     updatedAt: Date.now(),
   };
 }

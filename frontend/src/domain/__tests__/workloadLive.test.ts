@@ -49,6 +49,28 @@ describe('live Planner → Work Orders link', () => {
     expect(res.conflicts).toHaveLength(0);
   });
 
+  it('ML, MS/L, M(S/L) all count as Morning shift, and L / LV both count as Leave', () => {
+    // a on M, b on MS/L, c on M(S/L) -> 3 on Morning
+    const res = run(roster(base, { b: { 5: 'MS/L' }, c: { 5: 'M(S/L)' } }), [wo('w1', '2026-11-05', 'M', 3)]);
+    expect(morningOn(res, '2026-11-05')).toMatchObject({ onDuty: 3, demand: 3, buffer: 0 });
+    expect(res.byWo.w1.status).toBe('OK');
+
+    // Both "L" and "LV" remove engineer from shift
+    const resLeaveL = run(roster(base, { a: { 5: 'L' } }), [wo('w1', '2026-11-05', 'M', 2)]);
+    expect(resLeaveL.byWo.w1.status).toBe('SHORT');
+    const resLeaveLV = run(roster(base, { a: { 5: 'LV' } }), [wo('w1', '2026-11-05', 'M', 2)]);
+    expect(resLeaveLV.byWo.w1.status).toBe('SHORT');
+  });
+
+  it('ES/L, E(S/L), EL count as Evening and NS/L, N(S/L), NL count as Night', () => {
+    const res = run(roster(base, { c: { 5: 'ES/L' }, e: { 5: 'NS/L' } }), [
+      wo('wE', '2026-11-05', 'E', 2),
+      wo('wN', '2026-11-05', 'N', 2),
+    ]);
+    expect(res.byWo.wE.status).toBe('OK');
+    expect(res.byWo.wN.status).toBe('OK');
+  });
+
   it('Morning-family codes (ML) count as Morning; General Shift does not', () => {
     expect(run(roster(base, { c: { 5: 'ML' } }), [wo('w1', '2026-11-05', 'M', 3)]).byWo.w1.status).toBe('OK');
     expect(run(roster(base, { c: { 5: 'GS' } }), [wo('w1', '2026-11-05', 'M', 3)]).byWo.w1.status).toBe('SHORT');

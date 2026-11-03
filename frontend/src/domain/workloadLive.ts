@@ -108,15 +108,39 @@ export interface WorkloadInput {
 
 const TONE_FAMILY: Partial<Record<string, ShiftFamily>> = { morning: 'M', evening: 'E', night: 'N' };
 const FALLBACK_FAMILY: Record<string, ShiftFamily> = {
-  M: 'M', ML: 'M', MT: 'M', E: 'E', EL: 'E', ET: 'E', N: 'N', NL: 'N', NT: 'N',
+  M: 'M', ML: 'M', MT: 'M', 'M(S/L)': 'M', 'MS/L': 'M', MSL: 'M', 'M (S/L)': 'M',
+  E: 'E', EL: 'E', ET: 'E', 'E(S/L)': 'E', 'ES/L': 'E', ESL: 'E', 'E (S/L)': 'E',
+  N: 'N', NL: 'N', NT: 'N', 'N(S/L)': 'N', 'NS/L': 'N', NSL: 'N', 'N (S/L)': 'N',
 };
 
 /** Which shift family a roster code belongs to, using the line's own code settings. */
 export function codeFamily(codeId: string | undefined, codes: ShiftCode[] | undefined): ShiftFamily | null {
   if (!codeId) return null;
-  const code = codes?.find((c) => c.id === codeId);
-  if (code) return TONE_FAMILY[code.tone] ?? null;
-  return FALLBACK_FAMILY[codeId] ?? null;
+  const clean = codeId.trim().toUpperCase();
+  if (!clean || clean === '-' || clean === 'OFF' || clean === 'LV' || clean === 'L' || clean === 'FLRT' || clean === 'LEAVE' || clean === 'SICK' || clean === 'AL' || clean === 'SL') return null;
+
+  // 1. Check line's own configured code tone if defined
+  const code = codes?.find((c) => c.id === codeId || c.id.toUpperCase() === clean);
+  if (code?.tone && TONE_FAMILY[code.tone]) return TONE_FAMILY[code.tone]!;
+
+  // 2. Exact match in fallback table
+  if (FALLBACK_FAMILY[clean]) return FALLBACK_FAMILY[clean];
+
+  // 3. Dynamic pattern match for any custom or new codes:
+  // Starts with M (Morning variants: ML, MT, MS/L, M(S/L), M1, M_LEAD, etc.)
+  if (/^M(\b|[A-Z0-9_\(/])/i.test(clean) || /^(MORNING|DAY|EARLY)/i.test(clean)) {
+    return 'M';
+  }
+  // Starts with E (Evening variants: EL, ET, ES/L, E(S/L), E1, E_LEAD, etc.)
+  if (/^E(\b|[A-Z0-9_\(/])/i.test(clean) || /^(EVENING|AFT|LATE)/i.test(clean)) {
+    return 'E';
+  }
+  // Starts with N (Night variants: NL, NT, NS/L, N(S/L), N1, N_LEAD, etc.)
+  if (/^N(\b|[A-Z0-9_\(/])/i.test(clean) || /^(NIGHT|NITE)/i.test(clean)) {
+    return 'N';
+  }
+
+  return null;
 }
 
 /** Built-in crew default the importer used to write before standards were wired in. */
@@ -133,15 +157,14 @@ export function usesStandardCrew(wo: WorkOrder): boolean {
 
 /** The shift a work order is planned on: its own choice, else derived from operational railway patterns. */
 export function workOrderShift(wo: WorkOrder): ShiftFamily {
-  if (wo.plannedShift && (wo.plannedShift === 'M' || wo.plannedShift === 'E' || wo.plannedShift === 'N')) {
-    return wo.plannedShift;
+  if (wo.plannedShift) {
+    const fam = codeFamily(wo.plannedShift, undefined);
+    if (fam) return fam;
   }
-  const extraShift = wo.extra?.shift || wo.extra?.plannedShift || wo.extra?.Shift;
+  const extraShift = wo.extra?.shift || wo.extra?.plannedShift || wo.extra?.Shift || wo.extra?.SHIFT || wo.extra?.['Planned Shift'];
   if (extraShift) {
-    const s = String(extraShift).trim().toUpperCase();
-    if (s === 'M' || s.startsWith('MORN')) return 'M';
-    if (s === 'E' || s.startsWith('EVEN') || s.startsWith('AFT')) return 'E';
-    if (s === 'N' || s.startsWith('NIGH')) return 'N';
+    const fam = codeFamily(String(extraShift), undefined);
+    if (fam) return fam;
   }
 
   const desc = (wo.description || '').toUpperCase();

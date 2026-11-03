@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 
 import { useStore } from '@/app/store';
@@ -6,7 +6,7 @@ import { Button, Modal, Select, useToast } from '@/components/ui';
 import { db } from '@/data/db';
 import type { Employee, ShiftCode, WorkOrder } from '@/domain/types';
 import { lineCodeToId, normalizeLineCode, normalizeWorkType, parseDateToIso, parseLineCode, tryParseDate } from '@/domain/workload';
-import { WORK_TYPE_RULES, allWorkOrderColumns, type WorkOrderColumn } from '@/domain/workOrderColumns';
+import { allWorkOrderColumns, fieldFromHeader, headerKey, type WorkOrderColumn } from '@/domain/workOrderColumns';
 import {
   POOL_LINES, SHIFT_FAMILIES, SHIFT_LABEL, codeFamily, poolOfLineId, usesStandardCrew, windowCheck, workOrderShift,
   type LiveAllocation, type ShiftDayBalance, type ShiftFamily,
@@ -76,6 +76,21 @@ function formatDisplayDate(raw: string | undefined): string {
     }
   }
   return raw;
+}
+
+function formatCellValue(raw: unknown): string {
+  if (raw === null || raw === undefined || raw === '') return '—';
+  const str = String(raw).trim();
+  if (str === '' || str === '—') return '—';
+  const num = typeof raw === 'number' ? raw : (/^\d{5}(\.\d+)?$/.test(str) ? Number(str) : NaN);
+  if (!isNaN(num) && num > 20000 && num < 80000) {
+    const iso = tryParseDate(num);
+    if (iso) return formatDisplayDate(iso);
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    return formatDisplayDate(str);
+  }
+  return str;
 }
 
 // Clean Enterprise Vector SVG Icons
@@ -201,7 +216,6 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
   // Editing modal & states
   const [editingWo, setEditingWo] = useState<WorkOrder | null>(null);
   const [showConflictsExpanded, setShowConflictsExpanded] = useState(false);
-  const [showYellowGuide, setShowYellowGuide] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
 
   // Auto-heal legacy unparsed date strings in local database
@@ -226,18 +240,49 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
     }
   }, [workOrders, saveWorkOrder]);
 
-  // Columns added in Setup → Excel import columns (shown on rows and exported)
-  const extraColumns = settings.customWorkOrderColumns ?? [];
+  // All columns imported from Excel or added in Setup (shown on rows, details, and exported)
+  const extraColumns = useMemo(() => {
+    const list: WorkOrderColumn[] = [...(settings.customWorkOrderColumns ?? [])];
+    const seen = new Set(list.map((c) => headerKey(c.excelHeader)));
+    // Also include any extra fields present on imported workOrders so all columns always appear!
+    for (const wo of workOrders) {
+      if (!wo.extra) continue;
+      for (const [k] of Object.entries(wo.extra)) {
+        if (!k || seen.has(headerKey(k))) continue;
+        const appField = fieldFromHeader(k);
+        if (seen.has(headerKey(appField))) continue;
+        seen.add(headerKey(k));
+        seen.add(headerKey(appField));
+        list.push({
+          excelHeader: k,
+          appField,
+          required: false,
+          type: 'text',
+          usedFor: k,
+        });
+      }
+    }
+    return list;
+  }, [settings.customWorkOrderColumns, workOrders]);
+
   // Built-in columns removed in Setup are no longer imported, so hide their old data too
   const off = (header: string) => (settings.removedBuiltinColumns ?? []).includes(header);
   const extraChips = (wo: WorkOrder) =>
     extraColumns
-      .filter((c) => wo.extra?.[c.appField])
-      .map((c) => (
-        <span key={c.appField} className="px-1.5 py-0.5 rounded text-[11px] font-semibold bg-[var(--surface-3)] text-ink-2 border border-[var(--line)]">
-          {c.excelHeader}: {wo.extra?.[c.appField]}
-        </span>
-      ));
+      .filter((c) => wo.extra?.[c.appField] || wo.extra?.[c.excelHeader])
+      .map((c) => {
+        const raw = wo.extra?.[c.appField] ?? wo.extra?.[c.excelHeader];
+        const val = formatCellValue(raw);
+        return (
+          <span
+            key={c.appField}
+            className="px-1.5 py-0.5 rounded text-[11px] font-semibold bg-[var(--surface-3)] text-ink-2 border border-[var(--line)]"
+            title={`${c.excelHeader}: ${val}`}
+          >
+            {c.excelHeader}: {val}
+          </span>
+        );
+      });
 
   const todayIso = useMemo(() => {
     const d = new Date();
@@ -435,6 +480,23 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
 
   const [statusTimeFilter, setStatusTimeFilter] = useState<'today' | 'week' | 'month' | 'all'>('month');
 
+  const [expandedWoIds, setExpandedWoIds] = useState<Set<string>>(new Set());
+  const [visibleExtraCols, setVisibleExtraCols] = useViewState<string[]>('shiftline.workorders.visibleExtraCols', []);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+
+  const toggleExpand = (id: string) => {
+    setExpandedWoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const pinnedColumns = useMemo(() => {
+    return extraColumns.filter((c) => visibleExtraCols.includes(c.appField));
+  }, [extraColumns, visibleExtraCols]);
+
   const statusProgressByLine = useMemo(() => {
     const computeStatusForLines = (lineCodes: string[]) => {
       const wos = workOrders.filter((wo) => {
@@ -546,7 +608,7 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
       `"${(live?.assignedNames ?? []).join(', ')}"`,
       live?.status ?? 'UNASSIGNED',
       `"${(live?.reason ?? '').replace(/"/g, '""')}"`,
-      ...extraColumns.map((c) => `"${(wo.extra?.[c.appField] ?? '').replace(/"/g, '""')}"`),
+      ...extraColumns.map((c) => `"${(wo.extra?.[c.appField] ?? wo.extra?.[c.excelHeader] ?? '').replace(/"/g, '""')}"`),
     ];
     });
 
@@ -667,16 +729,6 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
             </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => setShowYellowGuide(true)}
-              className="h-10 px-3.5 whitespace-nowrap shrink-0 rounded-xl text-[13px] font-bold border border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/50 transition-all shadow-sm active:scale-95 inline-flex items-center gap-2"
-              title="View mandatory yellow columns mapping & data dictionary"
-            >
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-              <span>Yellow Headings Guide</span>
-            </button>
-
             {workOrders.length > 0 && (
             <span
               className="h-10 px-3.5 whitespace-nowrap shrink-0 rounded-xl text-[13px] font-bold border border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-2"
@@ -719,7 +771,6 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
           columns={allWorkOrderColumns(extraColumns, settings.removedBuiltinColumns)}
           onPick={() => fileInputRef.current?.click()}
           onDrop={importFile}
-          onGuide={() => setShowYellowGuide(true)}
         />
       ) : (
       <div className="w-full px-3 sm:px-6 lg:px-10 py-4 sm:py-6 flex flex-col gap-5 sm:gap-6">
@@ -1765,8 +1816,62 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
               </div>
             </div>
 
-            {/* Counts & Clear */}
-            <div className="flex items-center gap-4 text-[13px] text-ink-2 ml-auto">
+            {/* Counts, Column Picker & Clear */}
+            <div className="flex items-center gap-3 text-[13px] text-ink-2 ml-auto flex-wrap">
+              {extraColumns.length > 0 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowColumnPicker(!showColumnPicker)}
+                    className="px-2.5 py-1.5 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] text-ink-2 hover:text-ink text-[12px] font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                    title="Customize visible extra table columns"
+                  >
+                    <span>⚙️ Columns</span>
+                    {visibleExtraCols.length > 0 && (
+                      <span className="w-4 h-4 rounded-full bg-[var(--accent)] text-white text-[10px] font-black flex items-center justify-center">
+                        {visibleExtraCols.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {showColumnPicker && (
+                    <div className="absolute right-0 mt-1.5 w-64 rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] p-3 shadow-xl z-30 space-y-2">
+                      <div className="flex items-center justify-between border-b border-[var(--line)] pb-1.5">
+                        <span className="text-[11px] font-black uppercase text-ink-3">Table Columns</span>
+                        {visibleExtraCols.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setVisibleExtraCols([])}
+                            className="text-[11px] font-bold text-ink-3 hover:text-ink underline"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-60 overflow-y-auto space-y-1.5 text-[12px]">
+                        {extraColumns.map((c) => {
+                          const checked = visibleExtraCols.includes(c.appField);
+                          return (
+                            <label key={c.appField} className="flex items-center gap-2 cursor-pointer hover:text-ink text-ink-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) setVisibleExtraCols([...visibleExtraCols, c.appField]);
+                                  else setVisibleExtraCols(visibleExtraCols.filter((f) => f !== c.appField));
+                                }}
+                                className="rounded border-[var(--line-strong)] text-[var(--accent)] focus:ring-0"
+                              />
+                              <span className="truncate">{c.excelHeader}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <span>
                 Showing <strong className="text-ink font-bold">{filteredWorkOrders.length}</strong> of {workOrders.length} activities
               </span>
@@ -1888,7 +1993,7 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
                 <tr className="bg-[var(--surface-2)] border-b border-[var(--line)] text-[11.5px] uppercase font-bold text-ink-3 tracking-wider select-none">
                   <th className="py-4 px-5">Work Order ID</th>
                   <th className="py-4 px-5">{off('Description') ? 'Details' : 'Description'}</th>
-                  {extraColumns.map((c) => (
+                  {pinnedColumns.map((c) => (
                     <th key={c.appField} className="py-4 px-5">{c.excelHeader}</th>
                   ))}
                   <th className="py-4 px-5 text-center">Line</th>
@@ -1908,25 +2013,38 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
                   const assignedNames = live?.assignedNames ?? [];
                   const assignedCount = assignedNames.length;
                   const neededCount = live?.needed ?? (wo.resourceRequired || 1);
+                  const isExpanded = expandedWoIds.has(wo.id);
 
                   return (
-                    <tr
-                      key={wo.id}
-                      className="hover:bg-[var(--surface-2)]/75 transition-colors group"
-                    >
+                    <Fragment key={wo.id}>
+                      <tr
+                        className="hover:bg-[var(--surface-2)]/75 transition-colors group"
+                      >
                       {/* 1. Work Order ID */}
                       <td className="py-4 px-5 font-mono font-bold text-ink whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(wo.workOrderId)}
-                          className="hover:text-[var(--accent)] hover:underline flex items-center gap-1 group-hover:text-[var(--accent)] text-[14px]"
-                          title="Click to copy Work Order ID"
-                        >
-                          <span>{wo.workOrderId}</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(wo.id)}
+                            className={`w-6 h-6 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-[var(--surface-3)] transition-all ${
+                              isExpanded ? 'rotate-90 text-[var(--accent)] font-bold' : ''
+                            }`}
+                            title={isExpanded ? 'Collapse row details' : 'Expand full details & all imported attributes'}
+                          >
+                            ▶
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(wo.workOrderId)}
+                            className="hover:text-[var(--accent)] hover:underline flex items-center gap-1 group-hover:text-[var(--accent)] text-[14px]"
+                            title="Click to copy Work Order ID"
+                          >
+                            <span>{wo.workOrderId}</span>
+                          </button>
+                        </div>
                       </td>
 
-                      {/* 2. Description (with Department tag) */}
+                      {/* 2. Description (with Department tag & compact extra chips) */}
                       <td className="py-4 px-5 max-w-md">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           {[off('Div / Depart') ? '' : wo.department, off('Asset Group') ? '' : wo.assetGroup].filter(Boolean).map((t) => (
@@ -1946,6 +2064,21 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
                         {wo.location && !off('Location') && (
                           <div className="text-[11.5px] font-mono text-ink-3" title="Location">📍 {wo.location}</div>
                         )}
+                        {/* Compact chips for extra imported columns with clean formatting */}
+                        {extraChips(wo).length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {extraChips(wo).slice(0, 3)}
+                            {extraChips(wo).length > 3 && (
+                              <button
+                                type="button"
+                                onClick={() => toggleExpand(wo.id)}
+                                className="px-1.5 py-0.5 rounded text-[10.5px] font-bold text-[var(--accent)] hover:underline"
+                              >
+                                +{extraChips(wo).length - 3} more
+                              </button>
+                            )}
+                          </div>
+                        )}
                         
                         {live?.reason && (
                           <div className="text-[12px] text-red-400 mt-1 flex items-center gap-1 font-medium">
@@ -1960,10 +2093,10 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
                         )}
                       </td>
 
-                      {/* Columns added in Setup → Excel import columns */}
-                      {extraColumns.map((c) => (
-                        <td key={c.appField} className="py-4 px-5 text-[13px] text-ink-2 max-w-[200px]">
-                          {wo.extra?.[c.appField] || <span className="text-ink-3">—</span>}
+                      {/* Pinned columns (only if user explicitly selected any via Columns picker) */}
+                      {pinnedColumns.map((c) => (
+                        <td key={c.appField} className="py-4 px-5 text-[13px] text-ink-2 max-w-[200px] truncate whitespace-nowrap">
+                          {formatCellValue(wo.extra?.[c.appField] ?? wo.extra?.[c.excelHeader])}
                         </td>
                       ))}
 
@@ -2169,8 +2302,20 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
                       <td className="py-4 px-5 text-right whitespace-nowrap">
                         <button
                           type="button"
+                          onClick={() => toggleExpand(wo.id)}
+                          className={`px-2.5 py-1.5 rounded-lg text-[12px] font-bold border transition-all mr-1.5 ${
+                            isExpanded
+                              ? 'border-[var(--accent)]/50 bg-[var(--accent)]/15 text-[var(--accent)]'
+                              : 'border-[var(--line-strong)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)] text-ink-2 hover:text-ink'
+                          }`}
+                          title={isExpanded ? 'Hide details' : 'Inspect all attributes and dates'}
+                        >
+                          {isExpanded ? '▴ Less' : '▾ Details'}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setEditingWo(wo)}
-                          className="px-3 py-1.5 rounded-lg text-[12.5px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/15 border border-[var(--accent)]/30 transition-all mr-2"
+                          className="px-3 py-1.5 rounded-lg text-[12.5px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/15 border border-[var(--accent)]/30 transition-all mr-1.5"
                         >
                           Manage Crew
                         </button>
@@ -2184,12 +2329,96 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
                         </button>
                       </td>
                     </tr>
+                    {isExpanded && (
+                      <tr className="bg-[var(--surface-2)]/60 border-b border-[var(--line)]">
+                        <td colSpan={10 + pinnedColumns.length} className="py-3 px-5">
+                          <div className="rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] p-4 shadow-xs space-y-3">
+                            <div className="flex items-center justify-between border-b border-[var(--line)] pb-2 flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                                  Work Order Specification
+                                </span>
+                                <span className="font-mono font-bold text-ink text-[13px]">{wo.workOrderId}</span>
+                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[var(--surface-3)] text-ink-2 border border-[var(--line)]">{wo.workType}</span>
+                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[var(--surface-3)] text-ink-2 border border-[var(--line)]">{wo.line}</span>
+                              </div>
+                              <span className="text-[11px] text-ink-3 font-semibold">
+                                All dates &amp; extra attributes imported from Excel
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-[12.5px]">
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-ink-3 block">Description</span>
+                                <span className="font-semibold text-ink">{wo.description || '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-ink-3 block">Location</span>
+                                <span className="font-semibold text-ink">{wo.location || '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-ink-3 block">Department</span>
+                                <span className="font-semibold text-ink">{wo.department || '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-ink-3 block">Asset Group</span>
+                                <span className="font-semibold text-ink">{wo.assetGroup || '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-ink-3 block">Scheduled Start</span>
+                                <span className="font-semibold text-ink">{formatDisplayDate(wo.scheduledStart)}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-ink-3 block">Allowed Window</span>
+                                <span className="font-semibold text-ink">
+                                  {formatDisplayDate(wo.startNoEarlier)} → {formatDisplayDate(wo.finishNoLater)}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-ink-3 block">Target Start</span>
+                                <span className="font-semibold text-ink">{formatDisplayDate(wo.targetStart)}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold uppercase text-ink-3 block">Reported Date</span>
+                                <span className="font-semibold text-ink">{formatDisplayDate(wo.reportedDate)}</span>
+                              </div>
+                            </div>
+
+                            {/* All Extra Columns from Excel */}
+                            {extraColumns.length > 0 && (
+                              <div className="pt-2 border-t border-[var(--line)]">
+                                <span className="text-[10.5px] font-black uppercase tracking-wider text-ink-3 block mb-2">
+                                  All Imported File Columns ({extraColumns.length})
+                                </span>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                                  {extraColumns.map((col) => {
+                                    const rawVal = wo.extra?.[col.appField] ?? wo.extra?.[col.excelHeader];
+                                    const displayVal = formatCellValue(rawVal);
+                                    return (
+                                      <div key={col.appField} className="rounded-lg bg-[var(--surface-2)] p-2 border border-[var(--line)]">
+                                        <span className="text-[10px] font-bold uppercase text-ink-3 block truncate" title={col.excelHeader}>
+                                          {col.excelHeader}
+                                        </span>
+                                        <span className="text-[12px] font-semibold text-ink block truncate" title={displayVal}>
+                                          {displayVal}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                   );
                 })}
 
                 {filteredWorkOrders.length === 0 && (
                   <tr>
-                    <td colSpan={10 + extraColumns.length} className="py-20 text-center">
+                    <td colSpan={10 + pinnedColumns.length} className="py-20 text-center">
                       <div className="flex flex-col items-center justify-center gap-3">
                         <div className="w-14 h-14 rounded-2xl bg-[var(--surface-2)] flex items-center justify-center text-ink-3 border border-[var(--line)]">
                           <Icons.Clipboard className="w-7 h-7" />
@@ -2226,17 +2455,6 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
             toast(`Saved updates for Work Order #${updated.workOrderId}.`, 'ok');
             setEditingWo(null);
           }}
-        />
-      )}
-
-      {/* =========================================================================
-          MANDATORY YELLOW COLUMNS DATA DICTIONARY MODAL
-         ========================================================================= */}
-      {showYellowGuide && (
-        <YellowColumnsModal
-          columns={allWorkOrderColumns(extraColumns, settings.removedBuiltinColumns)}
-          isOpen={showYellowGuide}
-          onClose={() => setShowYellowGuide(false)}
         />
       )}
 
@@ -2396,6 +2614,72 @@ function CrewAssignmentModal({
           </div>
         </div>
 
+        {/* Imported Columns & Details */}
+        <div className="p-3.5 rounded-xl bg-[var(--surface-2)]/60 border border-[var(--line)] flex flex-col gap-2">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-3">
+            Imported Work Order Data
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-[12px]">
+            {draft.location && (
+              <div>
+                <span className="text-ink-3 block text-[10.5px]">Location</span>
+                <span className="font-semibold text-ink">{draft.location}</span>
+              </div>
+            )}
+            {draft.department && (
+              <div>
+                <span className="text-ink-3 block text-[10.5px]">Department</span>
+                <span className="font-semibold text-ink">{draft.department}</span>
+              </div>
+            )}
+            {draft.assetGroup && (
+              <div>
+                <span className="text-ink-3 block text-[10.5px]">Asset Group</span>
+                <span className="font-semibold text-ink">{draft.assetGroup}</span>
+              </div>
+            )}
+            {draft.status && (
+              <div>
+                <span className="text-ink-3 block text-[10.5px]">Status</span>
+                <span className="font-semibold text-ink">{draft.status}</span>
+              </div>
+            )}
+            {draft.reportedDate && (
+              <div>
+                <span className="text-ink-3 block text-[10.5px]">Reported Date</span>
+                <span className="font-semibold text-ink">{draft.reportedDate}</span>
+              </div>
+            )}
+            {draft.targetStart && (
+              <div>
+                <span className="text-ink-3 block text-[10.5px]">Target Start</span>
+                <span className="font-semibold text-ink">{draft.targetStart}</span>
+              </div>
+            )}
+            {draft.startNoEarlier && (
+              <div>
+                <span className="text-ink-3 block text-[10.5px]">Start No Earlier</span>
+                <span className="font-semibold text-ink">{draft.startNoEarlier}</span>
+              </div>
+            )}
+            {draft.finishNoLater && (
+              <div>
+                <span className="text-ink-3 block text-[10.5px]">Finish No Later</span>
+                <span className="font-semibold text-ink">{draft.finishNoLater}</span>
+              </div>
+            )}
+            {Object.entries(draft.extra ?? {}).map(([key, val]) => {
+              if (!val || typeof val !== 'string') return null;
+              return (
+                <div key={key}>
+                  <span className="text-ink-3 block text-[10.5px] truncate">{key}</span>
+                  <span className="font-semibold text-ink truncate block">{val}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Crew Size Stepper & Shift */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -2530,97 +2814,6 @@ function CrewAssignmentModal({
 }
 
 /**
- * Mandatory Yellow Columns Guide Modal
- */
-function YellowColumnsModal({
-  columns,
-  isOpen,
-  onClose,
-}: {
-  columns: WorkOrderColumn[];
-  isOpen: boolean;
-  onClose: () => void;
-}) {
-  if (!isOpen) return null;
-  const required = columns.filter((c) => c.required).length;
-
-  return (
-    <Modal
-      open={isOpen}
-      onClose={onClose}
-      title="Work-order Excel — Yellow (mandatory) columns"
-      width={880}
-    >
-      <div className="flex flex-col gap-5 text-ink">
-        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-[13px] text-ink-2 leading-relaxed">
-          <h4 className="text-[14px] font-bold text-amber-300 mb-1">
-            Only these {columns.length} columns are read ({required} mandatory)
-          </h4>
-          Columns are matched by <strong className="text-ink">header name</strong>, so their order in Excel doesn&apos;t
-          matter and title rows above the header are fine. Every other column (Status, Asset, SR Affected, Actual
-          Start …) is ignored. A missing column or blank cell is reported, e.g. <em>&quot;Row 45: Scheduled Start missing&quot;</em>.
-        </div>
-
-        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] overflow-hidden shadow-sm">
-          <table className="w-full text-left border-collapse text-[13px]">
-            <thead>
-              <tr className="bg-[var(--surface-3)] border-b border-[var(--line)] text-[11px] uppercase font-bold text-ink-3 tracking-wider">
-                <th className="py-3 px-4 w-10">#</th>
-                <th className="py-3 px-4">Excel header</th>
-                <th className="py-3 px-4">Type</th>
-                <th className="py-3 px-4">Used for</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--line)]">
-              {columns.map((c, i) => (
-                <tr key={c.excelHeader}>
-                  <td className="py-3 px-4 font-mono text-ink-3">{i + 1}</td>
-                  <td className="py-3 px-4 whitespace-nowrap">
-                    <span className="px-2 py-0.5 rounded font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">{c.excelHeader}</span>
-                    {c.required && <span className="ml-1.5 text-[10.5px] font-bold text-rose-400">required</span>}
-                    {c.aliases?.length ? (
-                      <div className="mt-1 text-[11px] text-ink-3">also: {c.aliases.join(', ')}</div>
-                    ) : null}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-[12px] text-ink-3">{c.type}</td>
-                  <td className="py-3 px-4 text-ink-2 text-[12.5px] leading-snug">{c.usedFor}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[12.5px] text-ink-2 leading-relaxed">
-          <div className="p-3.5 rounded-xl bg-[var(--surface-2)] border border-[var(--line)]">
-            <h5 className="font-bold text-ink mb-1">How the dates are used</h5>
-            <strong>Scheduled Start</strong> places the work on the Duty Roster and counts in shift demand.{' '}
-            <strong>Start No Earlier Than → Finish No Later Than</strong> is the allowed window (outside it = flagged; FNLT before today = &quot;past FNLT&quot;).{' '}
-            <strong>Target Start</strong> and <strong>Reported Date</strong> are reference only (target slip, age).
-          </div>
-          <div className="p-3.5 rounded-xl bg-[var(--surface-2)] border border-[var(--line)]">
-            <h5 className="font-bold text-ink mb-1">Not in the file → worked out</h5>
-            <strong>Work type</strong> from the Description:{' '}
-            {WORK_TYPE_RULES.map((r) => `${r.type} if it mentions ${r.pattern.source.replace(/\\b|\(|\)/g, '').split('|').slice(0, 4).join(', ')}…`).join('; ')}; otherwise PM.{' '}
-            <strong>Crew size</strong> from Setup → Work Order Resource Standards.
-          </div>
-        </div>
-
-        <p className="text-[12px] text-ink-3">
-          Need another column? Add it in <strong className="text-ink-2">Setup → Excel import columns</strong> (header, type, mandatory),
-          then import the file again. No code change needed.
-        </p>
-
-        <div className="flex justify-end pt-1">
-          <Button variant="primary" onClick={onClose}>
-            Got it
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-/**
  * First screen for a team with no work orders yet: drop the Excel file here.
  * After the import the normal Work Orders page appears with the data.
  */
@@ -2629,18 +2822,16 @@ function EmptyImport({
   columns,
   onPick,
   onDrop,
-  onGuide,
 }: {
   importing: boolean;
   columns: WorkOrderColumn[];
   onPick: () => void;
   onDrop: (file: File) => void;
-  onGuide: () => void;
 }) {
   const [over, setOver] = useState(false);
   const steps = [
     { n: 1, title: 'Import your Excel', text: 'Drop the monthly work-order sheet here, or click to choose it.' },
-    { n: 2, title: 'Yellow columns are read', text: `Only the ${columns.length} yellow columns, matched by header name. Problems are listed row by row.` },
+    { n: 2, title: 'All columns imported', text: 'Every column in your file is automatically read and imported. Standard fields link to the Duty Roster.' },
     { n: 3, title: 'Live staffing check', text: 'Every work order is matched to the Duty Roster for its day and shift — deficits update as you edit.' },
   ];
 
@@ -2690,7 +2881,7 @@ function EmptyImport({
               </h2>
               <p className="mt-2 text-[14px] text-ink-2 max-w-lg mx-auto leading-relaxed">
                 {importing
-                  ? 'Checking the yellow columns and matching every work order to the Duty Roster.'
+                  ? 'Reading all columns and matching work orders to the Duty Roster.'
                   : 'Drag and drop your Excel file here, or click to choose it. Nothing is shown until you import — your data stays in this browser.'}
               </p>
             </div>
@@ -2718,27 +2909,24 @@ function EmptyImport({
           ))}
         </div>
 
-        {/* Columns the file needs */}
+        {/* Standard Roster Columns */}
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[13px] font-bold text-ink">Columns your file needs</span>
-            <button type="button" onClick={onGuide} className="text-[12.5px] font-bold text-[var(--accent)] hover:underline">
-              What each column is for →
-            </button>
+            <span className="text-[13px] font-bold text-ink">Standard Roster Columns</span>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {columns.map((c) => (
               <span
                 key={c.excelHeader}
                 title={c.usedFor}
-                className="px-2 py-1 rounded-lg text-[12px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/30"
+                className="px-2 py-1 rounded-lg text-[12px] font-semibold bg-[var(--surface-2)] text-ink-2 border border-[var(--line)]"
               >
                 {c.excelHeader}
               </span>
             ))}
           </div>
-          <p className="mt-3 text-[12px] text-ink-3">
-            Column order doesn&apos;t matter and other columns are ignored. Need another column? Add it in Setup → Excel import columns.
+          <p className="mt-2.5 text-[12px] text-ink-3">
+            All columns in your file are automatically read and imported. The standard columns above are used to schedule demand and match engineers on the Duty Roster.
           </p>
         </div>
       </div>
@@ -2771,7 +2959,7 @@ function ImportReport({
             <span className="font-mono">{cleanLineNames(report.fileName)}</span> · {new Date(report.at).toLocaleString('en-GB')} · {report.rows} rows{report.sheetName ? ` · sheet “${report.sheetName}”` : ''} · header on row {report.headerRow}
           </span>
           {clean ? (
-            <span className="font-semibold text-emerald-400">✓ All yellow columns found, no row problems</span>
+            <span className="font-semibold text-emerald-400">✓ All standard columns found, no row problems</span>
           ) : (
             <>
               {report.fileErrors.length > 0 && (

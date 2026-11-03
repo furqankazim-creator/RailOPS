@@ -1,5 +1,6 @@
 import { isoDate, isWithin, weekdayOf } from './calendar';
 import { summarise } from './summary';
+import { codeFamily } from './workloadLive';
 import {
   OFF,
   type Employee,
@@ -79,13 +80,15 @@ export function validate(input: ValidateInput): Issue[] {
       const cell = row[i];
       if (!cell) continue;
       const code = codeById.get(cell.code);
-      const isWorking = cell.code !== OFF && !code?.isStatus;
+      const isWorking = cell.code !== OFF && !code?.isStatus && cell.code !== 'LV' && cell.code !== 'L' && cell.code !== 'FLRT';
 
       // Night → Morning the next day is an illegal turnaround: a 22:00–07:00
       // shift ending at 07:00 cannot be followed by one starting at 06:00.
       if (isWorking && i > 0) {
         const prev = row[i - 1]?.code;
-        if (prev && nightCodes.has(prev) && morningCodes.has(cell.code)) {
+        const prevIsNight = prev && (nightCodes.has(prev) || codeFamily(prev, codes) === 'N');
+        const currIsMorning = morningCodes.has(cell.code) || codeFamily(cell.code, codes) === 'M';
+        if (prevIsNight && currIsMorning) {
           issues.push({
             id: `turnaround:${empId}:${i}`,
             severity: 'error',
@@ -180,6 +183,8 @@ export function suggestCover(
     workload.set(empId, row.filter((c) => c && c.code !== OFF).length);
   }
 
+  const isMorningTarget = target?.tone === 'morning' || codeFamily(shiftCode, codes) === 'M';
+
   return employees
     .filter((e) => {
       const row = roster.cells[e.id];
@@ -188,7 +193,8 @@ export function suggestCover(
       if (leaveBlocks.some((b) => b.employeeId === e.id && isWithin(date, b.from, b.to))) return false;
       // Don't create the very turnaround the validator would flag.
       const prev = row[dayIndex - 1]?.code;
-      if (target?.tone === 'morning' && prev && nightCodes.has(prev)) return false;
+      const prevIsNight = prev && (nightCodes.has(prev) || codeFamily(prev, codes) === 'N');
+      if (isMorningTarget && prevIsNight) return false;
       return true;
     })
     .sort((a, b) => (workload.get(a.id) ?? 0) - (workload.get(b.id) ?? 0))

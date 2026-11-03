@@ -11,7 +11,7 @@ import { OFF, type Issue } from '@/domain/types';
 import { suggestCover } from '@/domain/validate';
 
 
-type Tab = 'issues' | 'coverage' | 'hours' | 'fairness';
+type Tab = 'issues' | 'coverage' | 'hours';
 
 export function InsightsDrawer({
   open,
@@ -58,7 +58,6 @@ export function InsightsDrawer({
                   { value: 'issues', label: 'Issues' },
                   { value: 'coverage', label: 'Coverage' },
                   { value: 'hours', label: 'Hours' },
-                  { value: 'fairness', label: 'Fairness' },
                 ]}
               />
             </div>
@@ -67,7 +66,6 @@ export function InsightsDrawer({
               {tab === 'issues' && <IssuesTab onJump={onJump} />}
               {tab === 'coverage' && <CoverageTab onJump={onJump} />}
               {tab === 'hours' && <HoursTab onJump={onJump} />}
-              {tab === 'fairness' && <FairnessTab />}
             </div>
     </div>
   );
@@ -564,61 +562,6 @@ function HoursTab({ onJump }: { onJump: (e: string | undefined, d: number | unde
   );
 }
 
-/* ---------------------------------------------------------------- Fairness */
-
-function FairnessTab() {
-  const { fairnessRows, codes } = useStore();
-  const { rows, spread } = fairnessRows;
-  const peak = Math.max(1, ...rows.map((r) => r.nights));
-  const nightTone = codeVars(codes.find((c) => c.tone === 'night') ?? { tone: 'night' });
-
-  return (
-    <div className="p-4 flex flex-col gap-4">
-      <p className="text-[11.5px] leading-snug text-ink-3">
-        Night shifts worked per person across the months in the tool. Auto-rotate uses this to decide who moves off nights next.
-      </p>
-      <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3.5">
-        <div className="text-[10.5px] font-semibold uppercase tracking-wider text-ink-3">
-          Night-shift spread
-        </div>
-        <div
-          className="mt-1 font-mono text-[22px] leading-none"
-          style={{ color: spread > 10 ? 'var(--warn)' : 'var(--ok)' }}
-        >
-          {spread}
-        </div>
-        <p className="mt-1.5 text-[11.5px] text-ink-3 leading-snug">
-          {spread === 0
-            ? 'Night duty is split evenly across the rotating pool.'
-            : `The gap between the most and least nights worked is ${spread} shifts. Auto-rotate will narrow it.`}
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        {rows.map((row) => (
-          <div key={row.employee.id} className="flex items-center gap-2.5">
-            <span className="w-[108px] shrink-0 truncate text-[12px]">{row.employee.name}</span>
-            <div className="flex-1 h-[7px] rounded-full bg-[var(--surface-3)] overflow-hidden">
-              <div
-                className="h-full rounded-full"
-                style={{ width: `${(row.nights / peak) * 100}%`, background: nightTone.accent }}
-              />
-            </div>
-            <span className="w-6 shrink-0 text-right font-mono text-[11px] text-ink-3">
-              {row.nights}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {rows.length === 0 && (
-        <p className="text-[12px] text-ink-3">
-          No history yet — generate a month or two and the balance will appear here.
-        </p>
-      )}
-    </div>
-  );
-}
 
 function MiniStat({ label, value, accent }: { label: string; value: number | string; accent?: boolean }) {
   return (

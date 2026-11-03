@@ -697,6 +697,7 @@ export function buildBackupWorkbook(data: BackupData, active?: ActiveRosterHint)
           leaveBlocks: (data.leave ?? []).filter((l) => l.employeeId && emps.some((e) => e.id === l.employeeId)),
           overrides: r.overrides ?? {},
           extraHours: r.extraHours ?? {},
+          otOverrides: r.otOverrides ?? {},
         });
       }
 

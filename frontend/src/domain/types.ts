@@ -150,6 +150,8 @@ export interface RosterMonth {
    * overtime (see `domain/hours.ts`) and, like overrides, survive a regenerate.
    */
   extraHours?: Record<string, Record<number, number>>; // empId -> dayIndex -> hours
+  /** Explicit monthly overtime override per employee (empId -> hours). */
+  otOverrides?: Record<string, number>;
   updatedAt: number;
 }
 

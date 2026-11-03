@@ -36,7 +36,9 @@ function scheduleServerDbSync() {
 }
 import { buildColumns, daysInMonth, monthKey, shiftMonth } from '@/domain/calendar';
 import {
-  generateMonth, rosterId, setCell as setCellPure, setExtraHours as setExtraHoursPure,
+  clearAllExtraHours as clearAllExtraHoursPure,
+  generateMonth, rosterId, setCell as setCellPure, setEmployeeOt as setEmployeeOtPure,
+  setExtraHours as setExtraHoursPure,
   setRange as setRangePure,
 } from '@/domain/generator';
 import { employeeHours, type EmployeeHours } from '@/domain/hours';
@@ -55,7 +57,7 @@ import type {
 } from '@/domain/types';
 import { validate } from '@/domain/validate';
 import { parseWorkOrdersWorkbook, setKnownLines } from '@/domain/workload';
-import { allWorkOrderColumns } from '@/domain/workOrderColumns';
+import { WORK_ORDER_COLUMNS, allWorkOrderColumns, headerKey, type WorkOrderColumn } from '@/domain/workOrderColumns';
 import {
   POOL_LINES, SHIFT_LABEL, codeFamily, computeWorkload, poolOfLineId, staffOnShift, type ShiftFamily, type WorkloadResult,
 } from '@/domain/workloadLive';
@@ -101,6 +103,8 @@ interface RosterStore {
   paintRange(employeeId: string, from: number, to: number, code: string): void;
   /** Hours worked on top of that day's shift; 0 clears them. */
   setExtraHours(employeeId: string, dayIndex: number, hours: number): void;
+  clearAllExtraHours(employeeId: string): void;
+  setEmployeeOt(employeeId: string, overtimeHours?: number): void;
   regenerate(options?: { respectOverrides?: boolean }): Promise<void>;
   applyRotation(result: AutoRotateResult, targetYear: number, targetMonth: number): Promise<void>;
   previewRotation(
@@ -353,6 +357,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       for (const [empId, val] of Object.entries(inMemoryStored?.extraHours ?? {})) {
         if (validEmpIds.has(empId)) cleanExtraHours[empId] = val;
       }
+      const cleanOtOverrides: Record<string, number> = {};
+      for (const [empId, val] of Object.entries(inMemoryStored?.otOverrides ?? {})) {
+        if (validEmpIds.has(empId) && typeof val === 'number') cleanOtOverrides[empId] = val;
+      }
 
       const lineLeaveBlocks = lineLeave.filter((l) => validEmpIds.has(l.employeeId));
 
@@ -364,6 +372,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         leaveBlocks: lineLeaveBlocks,
         overrides: cleanOverrides,
         extraHours: cleanExtraHours,
+        otOverrides: cleanOtOverrides,
       });
 
       setRoster(next);
@@ -408,6 +417,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       for (const [empId, val] of Object.entries(stored?.extraHours ?? {})) {
         if (validEmpIds.has(empId)) cleanExtraHours[empId] = val;
       }
+      const cleanOtOverrides: Record<string, number> = {};
+      for (const [empId, val] of Object.entries(stored?.otOverrides ?? {})) {
+        if (validEmpIds.has(empId) && typeof val === 'number') cleanOtOverrides[empId] = val;
+      }
 
       const lineLeaveBlocks = lineLeave.filter((l) => validEmpIds.has(l.employeeId));
 
@@ -419,6 +432,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         leaveBlocks: lineLeaveBlocks,
         overrides: cleanOverrides,
         extraHours: cleanExtraHours,
+        otOverrides: cleanOtOverrides,
       });
 
       if (cancelled) return;
@@ -453,6 +467,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       for (const [empId, val] of Object.entries(storedRoster.extraHours ?? {})) {
         if (validEmpIds.has(empId)) cleanExtraHours[empId] = val;
       }
+      const cleanOtOverrides: Record<string, number> = {};
+      for (const [empId, val] of Object.entries(storedRoster.otOverrides ?? {})) {
+        if (validEmpIds.has(empId) && typeof val === 'number') cleanOtOverrides[empId] = val;
+      }
       const lineLeaveBlocks = lineLeave.filter((l) => validEmpIds.has(l.employeeId));
       const next = generateMonth({
         year: activeYear,
@@ -462,6 +480,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         leaveBlocks: lineLeaveBlocks,
         overrides: cleanOverrides,
         extraHours: cleanExtraHours,
+        otOverrides: cleanOtOverrides,
       });
       setRoster(next);
       return;
@@ -674,13 +693,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [roster, commit],
   );
 
+  const clearAllExtraHours = useCallback(
+    (employeeId: string) => {
+      if (!roster) return;
+      commit(clearAllExtraHoursPure(roster, employeeId));
+    },
+    [roster, commit],
+  );
+
+  const setEmployeeOt = useCallback(
+    (employeeId: string, overtimeHours?: number) => {
+      if (!roster) return;
+      commit(setEmployeeOtPure(roster, employeeId, overtimeHours));
+    },
+    [roster, commit],
+  );
+
   const regenerate = useCallback(
     async (options?: { respectOverrides?: boolean }) => {
       const next = generateMonth({
         year: activeYear, month: activeMonth, lineId: activeLineId,
         employees, leaveBlocks: lineLeave,
         overrides: options?.respectOverrides === false ? {} : roster?.overrides ?? {},
-        extraHours: roster?.extraHours ?? {},
+        extraHours: options?.respectOverrides === false ? {} : roster?.extraHours ?? {},
+        otOverrides: options?.respectOverrides === false ? {} : roster?.otOverrides ?? {},
         respectOverrides: options?.respectOverrides ?? true,
       });
       commit(next);
@@ -1165,7 +1201,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         r = generateMonth({
           year, month, lineId, employees: people,
           leaveBlocks: leave.filter((l) => peopleIds.has(l.employeeId)),
-          overrides: effectiveStored?.overrides ?? {}, extraHours: effectiveStored?.extraHours ?? {},
+          overrides: effectiveStored?.overrides ?? {},
+          extraHours: effectiveStored?.extraHours ?? {},
+          otOverrides: effectiveStored?.otOverrides ?? {},
         });
         cache.set(key, r);
       }
@@ -1280,13 +1318,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [ruleIssues, workload, workOrders, allLines, activeLineId, activeYear, activeMonth, codes, codesByLine, employees, roster]);
 
   const uploadWorkOrders = useCallback(async (buffer: ArrayBuffer, fileName = 'work orders.xlsx', sheetName?: string) => {
-    // Built-in yellow columns + any added in Setup → Excel import columns
+    // Standard columns + any custom columns
     const cfg = await getSettings();
     const result = parseWorkOrdersWorkbook(buffer, allWorkOrderColumns(cfg.customWorkOrderColumns, cfg.removedBuiltinColumns), sheetName);
     await db.transaction('rw', db.workOrders, async () => {
       await db.workOrders.clear();
       await db.workOrders.bulkPut(result.workOrders);
     });
+
+    // Automatically register any newly detected columns from the file so they appear in table and CSV exports
+    if (result.detectedColumns && result.detectedColumns.length > 0) {
+      const existingHeaders = new Set([
+        ...WORK_ORDER_COLUMNS.flatMap((c) => [c.excelHeader, ...(c.aliases ?? [])].map(headerKey)),
+        ...(cfg.customWorkOrderColumns ?? []).map((c) => headerKey(c.excelHeader)),
+      ]);
+      const newCustomCols: WorkOrderColumn[] = [...(cfg.customWorkOrderColumns ?? [])];
+      for (const col of result.detectedColumns) {
+        if (!existingHeaders.has(headerKey(col.excelHeader))) {
+          existingHeaders.add(headerKey(col.excelHeader));
+          newCustomCols.push(col);
+        }
+      }
+      if (newCustomCols.length !== (cfg.customWorkOrderColumns ?? []).length) {
+        await patchSettings({ customWorkOrderColumns: newCustomCols });
+      }
+    }
+
     const sanitizedFileName = fileName.replace(/Line\s*4\s*,\s*5\s*(&|and)\s*6/gi, 'Line 4, 5 & 6');
     const report: WorkOrderImportReport = {
       fileName: sanitizedFileName,
@@ -1375,6 +1432,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     paintCell,
     paintRange,
     setExtraHours,
+    clearAllExtraHours,
+    setEmployeeOt,
     regenerate,
     applyRotation,
     previewRotation,

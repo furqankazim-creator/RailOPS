@@ -73,7 +73,7 @@ npm run build        # Compiles production bundle into dist/
 
 ### Questions to ask Microsoft Copilot in Microsoft Edge (with RailOPS open):
 - *"Summarize the staffing deficit visible on this RailOPS roster page."*
-- *"Explain the night shift fairness distribution shown in the Insights panel."*
+- *"Explain the night shift distribution across the team."*
 
 ---
 

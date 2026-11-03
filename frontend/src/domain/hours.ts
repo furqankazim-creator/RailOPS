@@ -11,8 +11,6 @@ import { OFF, type Employee, type RosterMonth, type ShiftCode } from './types';
  *
  *   working day   regular = min(shift + extra, standard)
  *                 OT      = max(0, shift + extra − standard)
- *   shift on a    regular = 0
- *   rest day      OT      = shift + extra
  *   off / leave   nothing counts — extra hours only apply to a worked shift;
  *                 to bring someone in on a day off, give them a shift
  */
@@ -26,7 +24,7 @@ const TIMING = /(\d{1,2})[:.](\d{2})\s*(?:hrs?)?\s*[–—\-to]+\s*(\d{1,2})[:.]
  * timing that cannot be read counts as a standard day.
  */
 export function shiftHours(code: ShiftCode | undefined, standardHours = DEFAULT_STANDARD_HOURS): number {
-  if (!code || code.isStatus) return 0;
+  if (!code || code.isStatus || code.id === 'LV' || code.id === 'L' || code.id === 'FLRT') return 0;
   const m = code.timing?.match(TIMING);
   if (!m) return standardHours;
   const start = Number(m[1]) * 60 + Number(m[2]);
@@ -83,7 +81,7 @@ export function employeeHours({
     for (let i = 0; i < row.length; i++) {
       const code = row[i]?.code ?? OFF;
       const def = byId.get(code);
-      const onLeave = !!def?.isStatus;
+      const onLeave = !!def?.isStatus || code === 'LV' || code === 'L' || code === 'FLRT';
       const isWorked = code !== OFF && !onLeave;
       const extra = isWorked ? Math.max(0, extras[i] ?? 0) : 0;
       const base = isWorked ? shiftHours(def, standardHours) : 0;
@@ -92,15 +90,8 @@ export function employeeHours({
       const restDay = employee.restDays.includes(weekdayOf(roster.year, roster.month, i + 1));
       const extraDuty = isWorked && restDay;
 
-      let regular: number;
-      let overtime: number;
-      if (extraDuty) {
-        regular = 0;
-        overtime = worked;
-      } else {
-        regular = Math.min(worked, standardHours);
-        overtime = Math.max(0, worked - standardHours);
-      }
+      const regular = Math.min(worked, standardHours);
+      const overtime = Math.max(0, worked - standardHours);
 
       total.days.push({ worked, regular, overtime, extraDuty });
       total.worked += worked;
@@ -109,6 +100,12 @@ export function employeeHours({
       total.extra += extra;
       if (isWorked) total.daysWorked++;
       if (extraDuty) total.extraDutyDays++;
+    }
+
+    if (roster.otOverrides && typeof roster.otOverrides[employee.id] === 'number') {
+      const overrideOt = Math.max(0, roster.otOverrides[employee.id]);
+      total.overtime = overrideOt;
+      total.worked = total.regular + overrideOt;
     }
 
     out[employee.id] = total;

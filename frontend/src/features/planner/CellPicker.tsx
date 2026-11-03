@@ -204,8 +204,8 @@ export function CellPicker({
         </div>
         )}
         {canAddExtra && dayInfo?.extraDuty && (
-          <p className="mt-1.5 text-[10.5px] leading-snug text-[var(--warn)]">
-            Rest day — the whole shift counts as overtime.
+          <p className="mt-1.5 text-[10.5px] leading-snug text-ink-3">
+            Assigned on rest day. Use buttons above to adjust extra OT hours.
           </p>
         )}
       </div>
