@@ -258,7 +258,7 @@ export function computeWorkload(input: WorkloadInput): WorkloadResult {
   const placeable: WorkOrder[] = [];
   for (const wo of workOrders) {
     const date = tryParseDate(wo.scheduledStart);
-    const line = parseLineCode(wo.line);
+    const line = parseLineCode(wo.line) ?? parseLineCode(wo.location) ?? parseLineCode(wo.description);
     if (date && line) { placeable.push(wo); continue; }
     const missing = [!date && 'Scheduled Start', !line && 'Line'].filter(Boolean).join(' and ');
     byWo[wo.id] = {
@@ -270,7 +270,7 @@ export function computeWorkload(input: WorkloadInput): WorkloadResult {
   }
 
   const prepared: Prepared[] = placeable.map((wo) => {
-    const lineCode = parseLineCode(wo.line)!;
+    const lineCode = (parseLineCode(wo.line) ?? parseLineCode(wo.location) ?? parseLineCode(wo.description))!;
     const date = tryParseDate(wo.scheduledStart)!;
     const [y, m, d] = date.split('-').map((n) => parseInt(n, 10));
     const shift = workOrderShift(wo);

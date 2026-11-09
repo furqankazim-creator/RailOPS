@@ -290,13 +290,14 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
   }, []);
   /** Rows without a valid line only show under "All Lines". */
   const inGroup = (wo: WorkOrder, g: LineGroup) => {
-    const l = parseLineCode(wo.line);
-    return l ? GROUP_LINES[g].includes(l) : g === 'ALL';
+    if (g === 'ALL') return true;
+    const l = parseLineCode(wo.line) ?? parseLineCode(wo.location) ?? parseLineCode(wo.description);
+    return l ? GROUP_LINES[g].includes(l) : false;
   };
 
-  // Filtered work orders (supports Line 4 & 6 combined)
+  // Filtered work orders (supports Line 4 & 6 combined and preserves exact row order)
   const filteredWorkOrders = useMemo(() => {
-    return workOrders.filter((wo) => {
+    const list = workOrders.filter((wo) => {
       if (!inGroup(wo, selectedLine)) return false;
       const live = workload.byWo[wo.id];
 
@@ -315,6 +316,14 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
         if (!matchesId && !matchesDesc && !matchesDept) return false;
       }
       return true;
+    });
+
+    // Sort to guarantee exact line/row order from the imported file
+    return list.sort((a, b) => {
+      const orderA = a.order ?? a.rowIndex ?? 0;
+      const orderB = b.order ?? b.rowIndex ?? 0;
+      if (orderA !== 0 && orderB !== 0) return orderA - orderB;
+      return a.id.localeCompare(b.id);
     });
   }, [workOrders, workload, selectedLine, selectedType, selectedShift, selectedStatus, searchQuery, todayIso]);
 
@@ -374,7 +383,7 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
   const lineCounts = useMemo(() => {
     const c = { L4: 0, L5: 0, L6: 0 };
     workOrders.forEach((wo) => {
-      const l = parseLineCode(wo.line);
+      const l = parseLineCode(wo.line) ?? parseLineCode(wo.location) ?? parseLineCode(wo.description);
       if (l) c[l]++;
     });
     return c;
@@ -1920,7 +1929,12 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono font-bold">
                       <span className="text-ink text-[13px]">{wo.workOrderId}</span>
-                      {wo.line && !off('Line') && <span className="px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-ink-2 border border-[var(--line)]">{wo.line}</span>}
+                      {(() => {
+                        const l = parseLineCode(wo.line) ?? parseLineCode(wo.location) ?? parseLineCode(wo.description) ?? wo.line;
+                        return l && !off('Line') ? (
+                          <span className="px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-ink-2 border border-[var(--line)]">{l}</span>
+                        ) : null;
+                      })()}
                       <span className="px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-ink-2 border border-[var(--line)]">{wo.workType}</span>
                       {wo.assetGroup && !off('Asset Group') && <span className="px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-ink-3 border border-[var(--line)]">{wo.assetGroup}</span>}
                     </div>
@@ -2102,17 +2116,22 @@ export function WorkOrdersPage({ onOpenPlanner }: { onOpenPlanner?: () => void }
 
                       {/* 3. Line */}
                       <td className="py-4 px-5 text-center font-mono whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[12px] font-black ${
-                            wo.line === 'L4'
-                              ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                              : wo.line === 'L6'
-                              ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
-                              : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                          }`}
-                        >
-                          {wo.line}
-                        </span>
+                        {(() => {
+                          const displayLine = parseLineCode(wo.line) ?? parseLineCode(wo.location) ?? parseLineCode(wo.description) ?? wo.line;
+                          return (
+                            <span
+                              className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[12px] font-black ${
+                                displayLine === 'L4'
+                                  ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                  : displayLine === 'L6'
+                                  ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                                  : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              }`}
+                            >
+                              {displayLine || '—'}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* 4. Work Type */}

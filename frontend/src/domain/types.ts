@@ -217,6 +217,8 @@ export type WorkType = 'PM' | 'CM' | 'ACS' | string;
 
 export interface WorkOrder {
   id: string;
+  order?: number;
+  rowIndex?: number;
   workOrderId: string; // e.g. "13445509"
   description: string;
   workType: WorkType; // "PM" | "CM" | "ACS"

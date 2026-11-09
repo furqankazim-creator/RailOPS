@@ -122,6 +122,21 @@ export function tryParseDate(raw: any): string | null {
     }
   }
 
+  // DD-MMM-YYYY: 16-Nov-2026, 05-NOV-2026 08:00
+  const mmmMatch = str.match(/(\d{1,2})[-/\s]([A-Za-z]{3,9})[-/\s](\d{4})/i);
+  if (mmmMatch) {
+    const months: Record<string, number> = {
+      jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+      january: 1, february: 2, march: 3, april: 4, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+    };
+    const key = mmmMatch[2].toLowerCase().slice(0, 3);
+    const mo = months[key];
+    if (mo) {
+      const d = String(parseInt(mmmMatch[1], 10)).padStart(2, '0');
+      return `${mmmMatch[3]}-${String(mo).padStart(2, '0')}-${d}`;
+    }
+  }
+
   // US format: M/D/YY or MM/DD/YYYY (or DD/MM/YYYY if day > 12)
   const usMatch = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
   if (usMatch) {
@@ -156,17 +171,29 @@ export function parseDateToIso(raw: any, fallbackYear = 2026, fallbackMonth = 11
   return tryParseDate(raw) ?? `${fallbackYear}-${String(fallbackMonth).padStart(2, '0')}-01`;
 }
 
-/** Strict line reading for imports: "L4", "Line 5", "6", "Line 4&6", "L4-6" → L4/L5/L6, anything else → null. */
+/** Strict line reading for imports: "L4", "Line 5", "6", "Line 4&6", "L4-6", "L4/L6", "L4 & L6" → L4/L5/L6, anything else → null. */
 export function parseLineCode(raw: unknown): 'L4' | 'L5' | 'L6' | null {
   const s = String(raw ?? '').trim();
   if (!s) return null;
-  const m = s.match(/^(?:l|line)?\s*0?([456])$/i);
-  if (m) return `L${m[1]}` as 'L4' | 'L5' | 'L6';
-  if (/^(?:line\s*5|l5|5)\b/i.test(s) && !/(?:4|6)/.test(s)) return 'L5';
-  if (/(?:4\s*(?:&|-|\/|,|and|_|\+)\s*(?:line\s*)?6|l4[-_&]l?6|4\s*&\s*6)/i.test(s)) return 'L4';
-  if (/\b(?:line\s*5|l5)\b/i.test(s) && !/(?:line\s*4|l4|line\s*6|l6)/i.test(s)) return 'L5';
-  if (/\b(?:line\s*4|l4)\b/i.test(s) && !/(?:line\s*6|l6)/i.test(s)) return 'L4';
-  if (/\b(?:line\s*6|l6)\b/i.test(s) && !/(?:line\s*4|l4)/i.test(s)) return 'L6';
+
+  // Single line direct matches:
+  if (/^(?:line\s*0?4|l0?4|4)$/i.test(s)) return 'L4';
+  if (/^(?:line\s*0?5|l0?5|5)$/i.test(s)) return 'L5';
+  if (/^(?:line\s*0?6|l0?6|6)$/i.test(s)) return 'L6';
+
+  // Check for presence of line indicators:
+  const has4 = /(?:^|[^0-9a-z])(?:line\s*0?4|l0?4|4)(?:[^0-9a-z]|$)/i.test(s) || /\bL0?4\b/i.test(s) || /\bLINE\s*0?4\b/i.test(s);
+  const has5 = /(?:^|[^0-9a-z])(?:line\s*0?5|l0?5|5)(?:[^0-9a-z]|$)/i.test(s) || /\bL0?5\b/i.test(s) || /\bLINE\s*0?5\b/i.test(s);
+  const has6 = /(?:^|[^0-9a-z])(?:line\s*0?6|l0?6|6)(?:[^0-9a-z]|$)/i.test(s) || /\bL0?6\b/i.test(s) || /\bLINE\s*0?6\b/i.test(s);
+
+  if (has5 && !has4 && !has6) return 'L5';
+  if (has4 && has6) {
+    if (/\b(?:line\s*0?6|l0?6)\b/i.test(s) && !/\b(?:line\s*0?4|l0?4)\b/i.test(s)) return 'L6';
+    return 'L4'; // Pool L4_L6
+  }
+  if (has4 && !has6 && !has5) return 'L4';
+  if (has6 && !has4 && !has5) return 'L6';
+
   return null;
 }
 
@@ -315,6 +342,7 @@ function parseWorkOrdersSheet(
 
     const problems: string[] = [];
     const values: Record<string, string> = {};
+    let explicitLineSpecified = false;
     for (const c of columns) {
       if (!colIndex.has(c)) continue; // already reported for the whole file
       const v = raw(c);
@@ -329,8 +357,9 @@ function parseWorkOrdersSheet(
         if (!iso) problems.push(`Row ${excelRow}: ${c.excelHeader} "${text}" is not a date`);
         values[c.appField] = iso ?? '';
       } else if (c.type === 'line') {
+        if (text !== '') explicitLineSpecified = true;
         const line = parseLineCode(text);
-        if (!line) problems.push(`Row ${excelRow}: ${c.excelHeader} "${text}" is not L4, L5 or L6`);
+        if (!line && text !== '') problems.push(`Row ${excelRow}: ${c.excelHeader} "${text}" is not L4, L5 or L6`);
         values[c.appField] = line ?? '';
       } else if (c.type === 'number') {
         if (isNaN(Number(text))) problems.push(`Row ${excelRow}: ${c.excelHeader} "${text}" is not a number`);
@@ -339,6 +368,13 @@ function parseWorkOrdersSheet(
         values[c.appField] = text;
       }
     }
+
+    // Resolve Line: if a line was explicitly typed in the file, use its parsed value (or '' if invalid).
+    // Only if line was completely absent or empty in the file, infer from location or description.
+    const rawLine = values.line || '';
+    const rawLoc = values.location || '';
+    const rawDesc = values.description || '';
+    const resolvedLine = explicitLineSpecified ? rawLine : (rawLine || (parseLineCode(rawLoc) ?? parseLineCode(rawDesc) ?? ''));
 
     const extra: Record<string, string> = {};
     for (const [k, v] of Object.entries(values)) if (!KNOWN_FIELDS.has(k)) extra[k] = v;
@@ -364,12 +400,15 @@ function parseWorkOrdersSheet(
 
     const workOrderId = values.workOrderId || `ROW-${excelRow}`;
     const description = values.description || '';
+    const cleanId = workOrderId.toLowerCase().replace(/[^a-z0-9]/g, '-');
     const wo: WorkOrder = {
-      id: `wo-${workOrderId.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${excelRow}`,
+      id: `wo-${String(excelRow).padStart(6, '0')}-${cleanId}`,
+      order: excelRow,
+      rowIndex: excelRow,
       workOrderId,
       description,
       workType: deriveWorkType(description, values.workType),
-      line: values.line ?? '',
+      line: resolvedLine,
       department: values.department || undefined,
       location: values.location || undefined,
       assetGroup: values.assetGroup || undefined,
