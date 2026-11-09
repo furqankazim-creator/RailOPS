@@ -161,10 +161,19 @@ export function workOrderShift(wo: WorkOrder): ShiftFamily {
     const fam = codeFamily(wo.plannedShift, undefined);
     if (fam) return fam;
   }
-  const extraShift = wo.extra?.shift || wo.extra?.plannedShift || wo.extra?.Shift || wo.extra?.SHIFT || wo.extra?.['Planned Shift'];
+  const extraShift =
+    wo.extra?.shift ||
+    wo.extra?.plannedShift ||
+    wo.extra?.Shift ||
+    wo.extra?.SHIFT ||
+    wo.extra?.['Planned Shift'] ||
+    Object.entries(wo.extra ?? {}).find(([k]) => /activity.*perform/i.test(k) || /shift/i.test(k))?.[1];
   if (extraShift) {
-    const fam = codeFamily(String(extraShift), undefined);
-    if (fam) return fam;
+    const s = String(extraShift).trim().toUpperCase();
+    if (s && s !== 'ANYTIME' && s !== 'NAN') {
+      const fam = codeFamily(s, undefined);
+      if (fam) return fam;
+    }
   }
 
   const desc = (wo.description || '').toUpperCase();
@@ -276,9 +285,14 @@ export function computeWorkload(input: WorkloadInput): WorkloadResult {
     const shift = workOrderShift(wo);
     const shiftName = shift === 'M' ? 'morning' : shift === 'E' ? 'evening' : 'night';
     const fromStandard = usesStandardCrew(wo);
+    const extraManpower = fromStandard
+      ? undefined
+      : Object.entries(wo.extra ?? {}).find(([k]) => /manpower|crew|resource.*req/i.test(k))?.[1];
+    const parsedManpower = extraManpower ? parseInt(String(extraManpower).trim(), 10) : NaN;
+    const fileCrew = !isNaN(parsedManpower) && parsedManpower > 0 ? parsedManpower : (wo.resourceRequired || 0);
     const needed = Math.max(
       1,
-      fromStandard ? getRequiredCrewCount(requirements, wo.line, wo.workType, shiftName) : wo.resourceRequired,
+      fromStandard ? getRequiredCrewCount(requirements, wo.line, wo.workType, shiftName) : (fileCrew || 1),
     );
     return { wo, lineId: lineCodeToId(lineCode), lineCode, date, y, m, d, shift, needed, fromStandard };
   });

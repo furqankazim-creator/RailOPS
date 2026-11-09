@@ -112,13 +112,23 @@ export function tryParseDate(raw: any): string | null {
     return `${y}-${m}-${d}`;
   }
 
-  // Day-first with dashes or dots, as typed in the sheets: 19-08-2026 01:15 AM
-  const dmy = str.match(/^(\d{1,2})[-.](\d{1,2})[-.](\d{4})(?!\d)/);
+  // Day-first with dashes or dots, as typed in the sheets: 19-08-2026 01:15 AM or 23-08-202601:00 AM
+  const dmy = str.match(/^(\d{1,2})[-.](\d{1,2})[-.](\d{4})/);
   if (dmy) {
     const day = parseInt(dmy[1], 10);
     const month = parseInt(dmy[2], 10);
     if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
       return `${dmy[3]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  // Day-first with slashes: 30/11/2026 or 30/11/20260 3:00:00
+  const slashDmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (slashDmy) {
+    const day = parseInt(slashDmy[1], 10);
+    const month = parseInt(slashDmy[2], 10);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${slashDmy[3]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
   }
 
